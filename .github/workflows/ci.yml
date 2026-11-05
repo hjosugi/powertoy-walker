@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  POWERTOYS_TAG: v0.102.3001
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - run: pwsh -NoProfile -File scripts/Lint.ps1
+
+  windows:
+    name: Windows ${{ matrix.architecture }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, architecture: x64, powertoys: x64 }
+          - { runner: windows-11-arm, architecture: ARM64, powertoys: arm64 }
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Test and package
+        run: ./scripts/Build.ps1 -Architecture ${{ matrix.architecture }}
+      - name: Install PowerToys
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download $env:POWERTOYS_TAG --repo microsoft/PowerToys --dir $env:RUNNER_TEMP --pattern 'PowerToysUserSetup-*-${{ matrix.powertoys }}.exe'
+          $Setup = Get-ChildItem $env:RUNNER_TEMP -Filter 'PowerToysUserSetup-*.exe'
+          $Install = Start-Process $Setup.FullName -ArgumentList '/install', '/quiet', '/norestart' -PassThru -Wait
+          if ($Install.ExitCode -ne 0) { throw "PowerToys setup exited with $($Install.ExitCode)." }
+      - name: End-to-end test in PowerToys Run
+        run: ./tests/e2e/Test-PowerToysRun.ps1 -Zip (Get-Item dist/*.zip).FullName -OutputDirectory "$env:RUNNER_TEMP/e2e"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/e2e
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package-${{ matrix.architecture }}
+          path: dist/*.zip

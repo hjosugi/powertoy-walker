@@ -1,0 +1,81 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "tests/Walker.Core.Tests"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "build release",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "tests/Walker.Core.Tests", "--configuration", "Release"],
+      "group": "build",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "build plugin",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "src/PowerToyWalker", "-p:Platform=${input:architecture}"],
+      "group": "build",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "test",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["run", "--project", "tests/Walker.Core.Tests", "--configuration", "Release"],
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "restore tools",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["tool", "restore"],
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "format",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["fantomas", "src", "tests"],
+      "dependsOn": "restore tools",
+      "problemMatcher": []
+    },
+    {
+      "label": "lint",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "scripts/Lint.ps1"],
+      "problemMatcher": []
+    },
+    {
+      "label": "install plugin",
+      "detail": "Windows only. Exit PowerToys first.",
+      "type": "process",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "./scripts/Build.ps1 -Architecture ${input:architecture}; ./dist/${input:architecture}/powertoy-walker/Install.ps1"
+      ],
+      "problemMatcher": "$msCompile"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "architecture",
+      "type": "pickString",
+      "description": "Architecture",
+      "options": ["x64", "ARM64"],
+      "default": "x64"
+    }
+  ]
+}

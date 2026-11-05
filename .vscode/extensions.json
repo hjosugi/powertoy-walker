@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "ionide.ionide-fsharp",
+    "ms-dotnettools.csharp",
+    "ms-vscode.powershell",
+    "editorconfig.editorconfig",
+    "mkhl.direnv",
+    "jnoortheen.nix-ide",
+    "github.vscode-github-actions"
+  ]
+}

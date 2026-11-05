@@ -1,0 +1,47 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Tests",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/tests/Walker.Core.Tests/bin/Debug/net10.0/Walker.Core.Tests.dll",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Benchmark",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build release",
+      "program": "${workspaceFolder}/tests/Walker.Core.Tests/bin/Release/net10.0/Walker.Core.Tests.dll",
+      "args": ["--benchmark-only"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "PowerToys Run: install and launch (Windows)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "install plugin",
+      "program": "${env:LOCALAPPDATA}/PowerToys/PowerToys.PowerLauncher.exe",
+      "cwd": "${env:LOCALAPPDATA}/PowerToys",
+      "console": "internalConsole",
+      "justMyCode": false,
+      "symbolOptions": {
+        "searchPaths": ["${workspaceFolder}/dist/build/x64", "${workspaceFolder}/dist/build/ARM64"]
+      }
+    },
+    {
+      "name": "PowerToys Run: attach (Windows)",
+      "type": "coreclr",
+      "request": "attach",
+      "processName": "PowerToys.PowerLauncher.exe",
+      "justMyCode": false,
+      "symbolOptions": {
+        "searchPaths": ["${workspaceFolder}/dist/build/x64", "${workspaceFolder}/dist/build/ARM64"]
+      }
+    }
+  ]
+}
