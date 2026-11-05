@@ -4,19 +4,25 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
     <Platforms>x64;ARM64</Platforms>
     <Platform Condition="'$(Platform)' == 'AnyCPU'">x64</Platform>
     <PlatformTarget>$(Platform)</PlatformTarget>
     <AssemblyName>Community.PowerToys.Run.Plugin.Walker</AssemblyName>
     <RootNamespace>PowerToyWalker</RootNamespace>
-    <Version>0.1.0</Version>
     <Authors>hjosugi</Authors>
     <Description>Switch to open windows with app icons and MRU ranking</Description>
+    <!-- Copies FSharp.Core.dll to the output, for the host's plugin load context to find. -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../Walker.Core/*.cs" Link="Core/%(Filename)%(Extension)" />
+    <Compile Include="Win32.fs" />
+    <Compile Include="NativeWindows.fs" />
+    <Compile Include="WindowIcons.fs" />
+    <Compile Include="WindowTracker.fs" />
+    <Compile Include="Main.fs" />
+    <ProjectReference Include="../Walker.Core/Walker.Core.fsproj" />
     <PackageReference Include="Community.PowerToys.Run.Plugin.Dependencies" Version="0.97.0" />
-    <None Update="plugin.json;Images/*.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="plugin.json;Images/*.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,6 @@
 {
   "ID": "A8724BE7A2C2494FAD64D0B94CB3CF79",
-  "ActionKeyword": "w",
+  "ActionKeyword": "w:",
   "IsGlobal": true,
   "Name": "powertoy-walker",
   "Author": "hjosugi",
@@ -10,5 +10,5 @@
   "ExecuteFileName": "Community.PowerToys.Run.Plugin.Walker.dll",
   "IcoPathDark": "Images/walker.png",
   "IcoPathLight": "Images/walker.png",
-  "DynamicLoading": false
+  "DynamicLoading": true
 }

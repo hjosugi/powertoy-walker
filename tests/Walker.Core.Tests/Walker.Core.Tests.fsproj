@@ -3,10 +3,13 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/Walker.Core/Walker.Core.csproj" />
+    <Compile Include="CacheTests.fs" />
+    <Compile Include="Performance.fs" />
+    <Compile Include="Program.fs" />
+    <ProjectReference Include="../../src/Walker.Core/Walker.Core.fsproj" />
   </ItemGroup>
 </Project>

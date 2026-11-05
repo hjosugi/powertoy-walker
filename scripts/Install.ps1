@@ -1,9 +1,11 @@
 param([string]$PackageDirectory = $PSScriptRoot)
 $ErrorActionPreference = 'Stop'
 $PackageDirectory = (Resolve-Path $PackageDirectory).Path
-$Dll = 'Community.PowerToys.Run.Plugin.Walker.dll'
-if (-not (Test-Path (Join-Path $PackageDirectory $Dll))) {
-    throw 'Extract the release ZIP and run Install.ps1 from the extracted powertoy-walker folder.'
+$Files = 'Community.PowerToys.Run.Plugin.Walker.dll', 'Walker.Core.dll', 'FSharp.Core.dll', 'plugin.json'
+foreach ($File in $Files) {
+    if (-not (Test-Path (Join-Path $PackageDirectory $File))) {
+        throw 'Extract the release ZIP and run Install.ps1 from the extracted powertoy-walker folder.'
+    }
 }
 if (Get-Process -Name 'PowerToys.PowerLauncher' -ErrorAction SilentlyContinue) {
     throw 'Exit PowerToys from its system tray menu before installing.'
@@ -19,6 +21,8 @@ if (Test-Path $Target) {
     Write-Host "Previous version backed up to $Backup"
 }
 New-Item -ItemType Directory -Force -Path "$Target/Images" | Out-Null
-Copy-Item (Join-Path $PackageDirectory $Dll), (Join-Path $PackageDirectory 'plugin.json') $Target
+foreach ($File in $Files) {
+    Copy-Item (Join-Path $PackageDirectory $File) $Target
+}
 Copy-Item (Join-Path $PackageDirectory 'Images/walker.png') "$Target/Images/"
 Write-Host "Installed to $Target. Start PowerToys, then enable powertoy-walker in PowerToys Run settings."
