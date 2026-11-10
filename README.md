@@ -97,7 +97,9 @@ PowerToys Run のプラグイン設定で、**直接アクティブ化コマン�
 - **Include minimized windows**: 既定オン。
 - **Include windows on other desktops**: 既定オン。別デスクトップへの切り替え・フォーカスの許可は
   Windows に従います。現在のデスクトップだけを検索する場合はオフにします。
-- **Enable fuzzy matching**: 既定オン。`frfx` のような省略形でも一致します。
+- **Enable fuzzy matching**: 既定オン。単語の頭文字 (`vsc` → Visual Studio Code、`wt` → WezTerm) や、
+  1つの単語の中で順に並ぶ文字 (`frfx` → Firefox) でも一致します。タイトルのあちこちに散らばった
+  文字では一致しません。
 
 PowerToys Run 側の **スコア調整 (Score adjustment)** も併用できます。
 照合する文字列には表示用の `(powertoy-walker)` を含めません。

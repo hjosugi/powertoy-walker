@@ -215,6 +215,20 @@ try {
         if ($Actual -ne $Expected) { throw "Found: $Actual" }
     }
 
+    Invoke-Check 'A keyword query lists only the windows that match it' {
+        # Letters in order anywhere in a title used to match too: e, 2, e in C:\Windows\system32\wsl.exe.
+        Send-Query 'w: e2e'
+        try {
+            Wait-Until {
+                $Names = @(Get-ResultName)
+                @($Names -match '^walker-e2e-(alpha|beta) : ').Count -eq 2 -and @($Names -notmatch 'e2e').Count -eq 0
+            } 'both test windows, and no window without e2e in its name' | Out-Null
+        }
+        finally {
+            Write-Host "      'w: e2e' shows: $(@(Get-ResultName) -join ' | ')"
+        }
+    }
+
     Invoke-Check 'A keyword query lists a window by title, tagged in the subtitle' {
         Search-Launcher 'w: walker-e2e-alpha' { $_ -match 'walker-e2e-alpha' -and $_ -match [regex]::Escape($PluginTag) }
     }
