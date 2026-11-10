@@ -15,13 +15,45 @@ Enter で切り替え、最小化中なら復元します。コンテキスト�
 Ctrl+W でウィンドウに通常の終了要求を送ります。未保存の確認は対象アプリが行います。
 プロセスの強制終了は行いません。
 
-## Windows へのインストール
+## すぐに使う
+
+[PowerToys](https://learn.microsoft.com/en-us/windows/powertoys/install) を入れた Windows で
+PowerShell を開き、次の1行を実行します。管理者権限も実行ポリシーの変更も不要です。
+
+```powershell
+irm https://github.com/hjosugi/powertoy-walker/releases/latest/download/install.ps1 | iex
+```
+
+PowerToys Run (既定は Alt+Space) を開いて `w:` と入力すると、開いている窓の一覧が出ます。
+
+インストーラーは次の順に進みます。
+
+1. PowerToys の場所 (ユーザー単位・マシン全体のどちらでも) と、そのアーキテクチャ (x64 / ARM64) を調べます。
+2. 最新リリースの `SHA256SUMS.txt` と対応する ZIP を取得し、SHA-256 が一致しなければ何も変更せずに止まります。
+3. PowerToys を終了し、ZIP 内の `Install.ps1` でプラグインを入れ (前のバージョンは退避します)、PowerToys を起動し直します。
+
+オプションを付けるときは、スクリプトブロックとして実行します。
+
+```powershell
+$Url = 'https://github.com/hjosugi/powertoy-walker/releases/latest/download/install.ps1'
+& ([scriptblock]::Create((irm $Url))) -Version 0.1.1      # バージョンを指定 (0.1.1 以降)
+& ([scriptblock]::Create((irm $Url))) -Architecture ARM64 # アーキテクチャを指定
+& ([scriptblock]::Create((irm $Url))) -Uninstall          # アンインストール
+```
+
+PowerToys がまだ無い場合は、先に `winget install Microsoft.PowerToys --source winget` などで入れます。
+PowerToys を管理者として実行している場合、インストーラーからは終了できないため、
+タスクトレイのメニューから終了してから実行します。
+
+## ZIP から手動でインストール
 
 Windows 11、.NET 10 対応の PowerToys Run を対象にしています。開発時に確認した公式APIは
 [PowerToys v0.102.3001](https://github.com/microsoft/PowerToys/tree/v0.102.3001/src/modules/launcher/Wox.Plugin) です。
 PowerToys Command Palette は別の拡張APIなので、このDLLの読み込み先にはできません。
 
-1. 使用している PowerToys と同じアーキテクチャの ZIP (`x64` または `ARM64`) を展開します。
+1. [Releases](https://github.com/hjosugi/powertoy-walker/releases/latest) から、使用している PowerToys と同じ
+   アーキテクチャの ZIP (`x64` または `ARM64`) を取得して展開します。`SHA256SUMS.txt` と
+   `Get-FileHash` で照合できます。
 2. タスクトレイの PowerToys メニューから PowerToys を終了します。
 3. 展開した `powertoy-walker` フォルダーで PowerShell を開き、次を実行します。
 
@@ -137,7 +169,16 @@ pwsh scripts/Lint.ps1
 検証範囲: CI (`.github/workflows/ci.yml`) では x64 (Windows Server 2025) と ARM64 (Windows 11) の
 実物の PowerToys Run v0.102.3001 に ZIP をインストールし、キー操作で読み込み、検索、切り替え、
 最小化からの復元、ウィンドウを閉じる操作、仮想デスクトップ間の切り替え、設定の反映、終了までを
-確認しています (`tests/e2e`)。ランナー上の確認のため、複数モニターや管理者権限の窓は対象外です。
+確認しています (`tests/e2e/Test-PowerToysRun.ps1`)。続けて、ビルドした ZIP をリリースと同じ形で
+ローカルから配信し、Windows PowerShell で1行インストール、改ざんした ZIP の拒否、上書き、
+アンインストールを確認します (`tests/e2e/Test-QuickInstall.ps1`)。
+ランナー上の確認のため、複数モニターや管理者権限の窓は対象外です。
+
+## リリース
+
+`v0.1.2` のようなタグを push すると、Release ワークフローが上記のテストを通った ZIP を
+`install.ps1`・`SHA256SUMS.txt`・artifact attestation とともに公開します。手順は
+[RELEASING.md](RELEASING.md)、変更点は [CHANGELOG.md](CHANGELOG.md) にあります。
 
 公式資料: [PowerToys Run](https://learn.microsoft.com/en-us/windows/powertoys/run)、
 [プラグイン作成チェックリスト](https://github.com/microsoft/PowerToys/blob/main/doc/devdocs/modules/launcher/new-plugin-checklist.md)。

@@ -4,7 +4,7 @@
   "IsGlobal": true,
   "Name": "powertoy-walker",
   "Author": "hjosugi",
-  "Version": "0.1.0",
+  "Version": "0.1.1",
   "Language": "csharp",
   "Website": "https://github.com/hjosugi/powertoy-walker",
   "ExecuteFileName": "Community.PowerToys.Run.Plugin.Walker.dll",
