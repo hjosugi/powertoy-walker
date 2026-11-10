@@ -8,7 +8,7 @@ PowerToys を入れた Windows で PowerShell を開き、次の1行を実行し
 irm https://github.com/hjosugi/powertoy-walker/releases/latest/download/install.ps1 | iex
 ```
 
-PowerToys のアーキテクチャに合う ZIP を `SHA256SUMS.txt` で検証してから入れ、PowerToys を起動し直します。
+PowerToys のアーキテクチャに合う ZIP を `SHA256SUMS.txt` で検証してから入れ、PowerToys を起動し直します。PowerToys Run がオフ (最近の PowerToys の既定) ならオンにします。
 PowerToys Run (既定は Alt+Space) で `w:` と入力すると、開いている窓の一覧が出ます。
 ZIP から手動で入れる手順とアンインストールは [README](https://github.com/hjosugi/powertoy-walker#readme) にあります。
 

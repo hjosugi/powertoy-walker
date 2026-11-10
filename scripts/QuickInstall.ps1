@@ -100,6 +100,28 @@ param(
         $true
     }
 
+    # PowerToys turns PowerToys Run off by default since Command Palette arrived, and the
+    # plugin runs inside it. Call this only while PowerToys is closed: it saves this file.
+    function Enable-PowerToysRun {
+        $Path = Join-Path $PluginData 'settings.json'
+        $Text = if (Test-Path -LiteralPath $Path) { [System.IO.File]::ReadAllText($Path) } else { '' }
+        $Settings = if ($Text.Trim()) { $Text | ConvertFrom-Json } else { [pscustomobject]@{} }
+        if ($Settings.enabled -and $Settings.enabled.'PowerToys Run' -eq $true) { return }
+        if ($Text -match '"PowerToys Run"\s*:\s*false') {
+            # Change just this value, and leave the rest of the file as PowerToys wrote it.
+            $Text = $Text -replace '("PowerToys Run"\s*:\s*)false', '${1}true'
+        }
+        else {
+            if (-not $Settings.enabled) { $Settings | Add-Member -NotePropertyName enabled -NotePropertyValue ([pscustomobject]@{}) -Force }
+            $Settings.enabled | Add-Member -NotePropertyName 'PowerToys Run' -NotePropertyValue $true -Force
+            $Text = $Settings | ConvertTo-Json -Depth 32 -Compress
+        }
+        if (($Text | ConvertFrom-Json).enabled.'PowerToys Run' -ne $true) { throw "Could not turn on PowerToys Run in $Path." }
+        New-Item -ItemType Directory -Force -Path $PluginData | Out-Null
+        [System.IO.File]::WriteAllText($Path, $Text)
+        Write-Host 'Turned on PowerToys Run, which recent PowerToys versions leave off.'
+    }
+
     function Open-PowerToysApp([string]$Directory) {
         Write-Host 'Starting PowerToys...'
         Start-Process -FilePath (Join-Path $Directory 'PowerToys.exe') -WorkingDirectory $Directory
@@ -180,6 +202,7 @@ param(
             # A script block runs whatever the execution policy, which would refuse the file itself.
             $Installer = [System.IO.File]::ReadAllText((Join-Path $Package 'Install.ps1'))
             & ([scriptblock]::Create($Installer)) -PackageDirectory $Package
+            Enable-PowerToysRun
         }
         finally {
             # Bring PowerToys back even if the install failed, rather than leave it closed.

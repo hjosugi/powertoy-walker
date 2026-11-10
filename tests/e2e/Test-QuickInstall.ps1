@@ -11,6 +11,7 @@ $Root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $RunData = "$env:LOCALAPPDATA\Microsoft\PowerToys\PowerToys Run"
 $PluginDirectory = "$RunData\Plugins\powertoy-walker"
 $BackupDirectory = "$env:LOCALAPPDATA\Microsoft\PowerToys\powertoy-walker-backups"
+$GeneralSettings = "$env:LOCALAPPDATA\Microsoft\PowerToys\settings.json"
 $RunnerPath = Join-Path $PowerToysDirectory 'PowerToys.exe'
 $Failures = [System.Collections.Generic.List[string]]::new()
 
@@ -102,14 +103,17 @@ function Get-InitializeCount {
 
 function Get-RunnerId { @(Get-Process -Name 'PowerToys' -ErrorAction SilentlyContinue).Id }
 
+function Get-PowerToysRunEnabled {
+    if (Test-Path $GeneralSettings) { (Get-Content $GeneralSettings -Raw | ConvertFrom-Json).enabled.'PowerToys Run' }
+}
+
 # Waits for PowerToys to start PowerToys Run, and for the launcher to load the plugin again.
 function Assert-PluginLoadedAfter([int]$Count) {
     try {
         Wait-Until { (Get-InitializeCount) -gt $Count } 'PowerToys Run to load the plugin' -Seconds 180 | Out-Null
     }
     catch {
-        $Settings = "$env:LOCALAPPDATA\Microsoft\PowerToys\settings.json"
-        if (Test-Path $Settings) { Write-Host "      settings.json: $(Get-Content $Settings -Raw)" }
+        if (Test-Path $GeneralSettings) { Write-Host "      settings.json: $(Get-Content $GeneralSettings -Raw)" }
         Write-Host "      PowerToys processes: $((Get-Process -Name 'PowerToys*' -ErrorAction SilentlyContinue).ProcessName -join ', ')"
         throw
     }
@@ -124,11 +128,11 @@ $OneLine = "irm $Release/install.ps1 | iex"
 $WithOptions = "& ([scriptblock]::Create((irm $Release/install.ps1)))"
 
 try {
-    Invoke-Check 'PowerToys starts PowerToys Run with the plugin already installed' {
-        $Count = Get-InitializeCount
-        Start-Process $RunnerPath -WorkingDirectory $PowerToysDirectory
-        Assert-PluginLoadedAfter $Count
-    }
+    # PowerToys as most people have it: running, with the defaults of a fresh install.
+    Start-Process $RunnerPath -WorkingDirectory $PowerToysDirectory
+    Wait-Until { Get-RunnerId } 'PowerToys to start' | Out-Null
+    Wait-Until { Test-Path $GeneralSettings } 'PowerToys to save its settings' | Out-Null
+    Write-Host "      PowerToys Run enabled by default: $(Get-PowerToysRunEnabled)"
 
     Invoke-Check 'A package that does not match SHA256SUMS.txt is refused before PowerToys is touched' {
         $Runner = Get-RunnerId
@@ -140,13 +144,16 @@ try {
         if ("$(Get-RunnerId)" -ne "$Runner") { throw 'PowerToys was restarted.' }
     }
 
-    Invoke-Check 'The one-line install replaces the running plugin and restarts PowerToys' {
+    Invoke-Check 'The one-line install turns on PowerToys Run, replaces the plugin and restarts PowerToys' {
         $Runner = Get-RunnerId
         $Count = Get-InitializeCount
         $Backups = @(Get-ChildItem $BackupDirectory -Directory -ErrorAction SilentlyContinue).Count
+        $WasEnabled = Get-PowerToysRunEnabled
         $Result = Invoke-WindowsPowerShell $Release $OneLine
         if ($Result.ExitCode -ne 0) { throw "It exited with $($Result.ExitCode)." }
         if ($Result.Output -notmatch "Found PowerToys \($Architecture\)") { throw "It did not pick $Architecture." }
+        if ((Get-PowerToysRunEnabled) -ne $true) { throw 'PowerToys Run is still off.' }
+        if (($WasEnabled -ne $true) -and ($Result.Output -notmatch 'Turned on PowerToys Run')) { throw 'It did not say it turned on PowerToys Run.' }
         $Installed = (Get-Content "$PluginDirectory\plugin.json" -Raw | ConvertFrom-Json).Version
         if ($Installed -ne $Version) { throw "Installed $Installed instead of $Version." }
         foreach ($File in 'Community.PowerToys.Run.Plugin.Walker.dll', 'Walker.Core.dll', 'FSharp.Core.dll', 'Images\walker.png') {
@@ -180,11 +187,15 @@ try {
         if ("$NewRunner" -eq "$Runner") { throw 'PowerToys was not restarted.' }
     }
 
-    Invoke-Check 'The one-line install works on a machine without the plugin' {
+    Invoke-Check 'The one-line install works with PowerToys closed, and with no PowerToys settings yet' {
+        Get-Process -Name 'PowerToys*' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Wait-Until { -not (Get-Process -Name 'PowerToys*' -ErrorAction SilentlyContinue) } 'PowerToys to exit' | Out-Null
+        Remove-Item $GeneralSettings
         $Count = Get-InitializeCount
         $Result = Invoke-WindowsPowerShell $Release $OneLine
         if ($Result.ExitCode -ne 0) { throw "It exited with $($Result.ExitCode)." }
         if ($Result.Output -notmatch "powertoy-walker $([regex]::Escape($Version)) is ready") { throw 'It did not report the version.' }
+        Wait-Until { Get-RunnerId } 'PowerToys to start' | Out-Null
         Assert-PluginLoadedAfter $Count
     }
 }

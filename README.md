@@ -30,7 +30,9 @@ PowerToys Run (既定は Alt+Space) を開いて `w:` と入力すると、開�
 
 1. PowerToys の場所 (ユーザー単位・マシン全体のどちらでも) と、そのアーキテクチャ (x64 / ARM64) を調べます。
 2. 最新リリースの `SHA256SUMS.txt` と対応する ZIP を取得し、SHA-256 が一致しなければ何も変更せずに止まります。
-3. PowerToys を終了し、ZIP 内の `Install.ps1` でプラグインを入れ (前のバージョンは退避します)、PowerToys を起動し直します。
+3. PowerToys を終了し、ZIP 内の `Install.ps1` でプラグインを入れます (前のバージョンは退避します)。
+4. PowerToys Run がオフなら PowerToys の設定でオンにし、PowerToys を起動し直します。
+   最近の PowerToys (v0.102.3001 で確認) は Command Palette を既定にし、PowerToys Run をオフにしています。
 
 オプションを付けるときは、スクリプトブロックとして実行します。
 
@@ -61,7 +63,8 @@ PowerToys Command Palette は別の拡張APIなので、このDLLの読み込み
    powershell -ExecutionPolicy Bypass -File .\Install.ps1
    ```
 
-4. PowerToys を起動し、**PowerToys Run → プラグイン → powertoy-walker** を有効にします。
+4. PowerToys を起動し、設定の **PowerToys Run** をオンにします (最近の PowerToys では既定でオフです)。
+   **PowerToys Run → プラグイン** に powertoy-walker が有効な状態で並びます。
 
 手動の場合は、3つのDLL・`plugin.json`・`Images` を含むフォルダーを次へコピーします。
 
@@ -171,7 +174,7 @@ pwsh scripts/Lint.ps1
 最小化からの復元、ウィンドウを閉じる操作、仮想デスクトップ間の切り替え、設定の反映、終了までを
 確認しています (`tests/e2e/Test-PowerToysRun.ps1`)。続けて、ビルドした ZIP をリリースと同じ形で
 ローカルから配信し、Windows PowerShell で1行インストール、改ざんした ZIP の拒否、上書き、
-アンインストールを確認します (`tests/e2e/Test-QuickInstall.ps1`)。
+PowerToys Run が既定でオフの状態からの有効化、アンインストールを確認します (`tests/e2e/Test-QuickInstall.ps1`)。
 ランナー上の確認のため、複数モニターや管理者権限の窓は対象外です。
 
 ## リリース
