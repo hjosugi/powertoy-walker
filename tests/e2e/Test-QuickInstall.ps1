@@ -1,6 +1,7 @@
-# End-to-end test of the one-line install from the README. Serves a release from a local
-# folder the way GitHub serves release assets, as application/octet-stream, and runs the
-# documented commands in Windows PowerShell, the shell every Windows machine has.
+# End-to-end test of the one-line install and the step-by-step install from the README.
+# Serves a release from a local folder the way GitHub serves release assets, as
+# application/octet-stream, and runs the documented commands in Windows PowerShell, the
+# shell every Windows machine has.
 param(
     [Parameter(Mandatory)][string]$Zip,
     [Parameter(Mandatory)][string]$OutputDirectory,
@@ -93,6 +94,24 @@ function Invoke-WindowsPowerShell([string]$BaseUrl, [string]$Command) {
     $ExitCode = $LASTEXITCODE
     foreach ($Line in $Output) { Write-Host "      | $Line" }
     [pscustomobject]@{ ExitCode = $ExitCode; Output = $Output -join "`n" }
+}
+
+# The code blocks of the README's step-by-step install, downloading from $BaseUrl instead.
+function Get-ReadmeStep([string]$BaseUrl) {
+    $Readme = [System.IO.File]::ReadAllText("$Root/README.md")
+    $Section = [regex]::Match($Readme, '(?s)<!-- step-by-step install:.*?-->(.*)<!-- end of step-by-step install -->').Groups[1].Value
+    $Steps = @([regex]::Matches($Section, '(?ms)^ *```powershell\r?\n(.*?)^ *```') | ForEach-Object { $_.Groups[1].Value })
+    if ($Steps.Count -ne 4) { throw "The README has $($Steps.Count) step-by-step blocks instead of 4." }
+    $Latest = 'https://github.com/hjosugi/powertoy-walker/releases/latest/download'
+    if (-not $Steps[0].Contains("'$Latest'")) { throw 'The first step does not download the latest release.' }
+    $Steps | ForEach-Object { $_.Replace($Latest, $BaseUrl) }
+}
+
+# Runs README steps in one Windows PowerShell session, as if pasted one after another.
+function Invoke-ReadmeStep([string]$Name, [string[]]$Step) {
+    $Path = Join-Path $OutputDirectory "$Name.ps1"
+    [System.IO.File]::WriteAllText($Path, ($Step -join "`n"))
+    Invoke-WindowsPowerShell '' "& ([scriptblock]::Create([IO.File]::ReadAllText('$Path')))"
 }
 
 function Get-InitializeCount {
@@ -196,6 +215,33 @@ try {
         if ($Result.ExitCode -ne 0) { throw "It exited with $($Result.ExitCode)." }
         if ($Result.Output -notmatch "powertoy-walker $([regex]::Escape($Version)) is ready") { throw 'It did not report the version.' }
         Wait-Until { Get-RunnerId } 'PowerToys to start' | Out-Null
+        Assert-PluginLoadedAfter $Count
+    }
+
+    Invoke-Check "The README's step-by-step install refuses a package that does not match SHA256SUMS.txt" {
+        $Result = Invoke-ReadmeStep 'readme-tampered' (Get-ReadmeStep $Tampered)[0]
+        if ($Result.Output -notmatch 'SHA-256 mismatch') { throw 'The first step accepted it.' }
+    }
+
+    Invoke-Check "The README's step-by-step install downloads, extracts and installs the plugin, and turns on PowerToys Run" {
+        # Starts from PowerToys running with PowerToys Run off, as a fresh install has it, and no plugin.
+        Get-Process -Name 'PowerToys*' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Wait-Until { -not (Get-Process -Name 'PowerToys*' -ErrorAction SilentlyContinue) } 'PowerToys to exit' | Out-Null
+        Remove-Item $PluginDirectory -Recurse -Force
+        $Text = [System.IO.File]::ReadAllText($GeneralSettings) -replace '("PowerToys Run"\s*:\s*)true', '${1}false'
+        [System.IO.File]::WriteAllText($GeneralSettings, $Text)
+        Start-Process $RunnerPath -WorkingDirectory $PowerToysDirectory
+        $Runner = Wait-Until { Get-RunnerId } 'PowerToys to start'
+        if ((Get-PowerToysRunEnabled) -ne $false) { throw 'PowerToys Run did not start out off.' }
+        $Count = Get-InitializeCount
+
+        $Result = Invoke-ReadmeStep 'readme-steps' (Get-ReadmeStep $Release)
+        if ($Result.ExitCode -ne 0) { throw "It exited with $($Result.ExitCode)." }
+        $Installed = (Get-Content "$PluginDirectory\plugin.json" -Raw | ConvertFrom-Json).Version
+        if ($Installed -ne $Version) { throw "Installed $Installed instead of $Version." }
+        if ((Get-PowerToysRunEnabled) -ne $true) { throw 'PowerToys Run is still off.' }
+        $NewRunner = Wait-Until { Get-RunnerId } 'PowerToys to start again'
+        if ("$NewRunner" -eq "$Runner") { throw 'PowerToys was not restarted.' }
         Assert-PluginLoadedAfter $Count
     }
 }

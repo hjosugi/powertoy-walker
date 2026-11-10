@@ -24,7 +24,7 @@
 | ジョブ | 内容 |
 | --- | --- |
 | Check the version | タグが `v` + `plugin.json` の `Version` と一致し、`main` 上のコミットで、`CHANGELOG.md` に節があることを確認 |
-| Test | CI と同じジョブ。Lint、単体テスト、x64 と ARM64 の実物の PowerToys Run での e2e テスト、1行インストールの e2e テスト |
+| Test | CI と同じジョブ。Lint、単体テスト、x64 と ARM64 の実物の PowerToys Run での e2e テスト、1行インストールと README のコマンド手順の e2e テスト |
 | Publish | Test が作った ZIP をそのまま使い、`install.ps1` と `SHA256SUMS.txt` を添えて、artifact attestation を付け、リリースを作成 |
 | Verify the download | README の1行インストールと同じ公開 URL から取得し、SHA-256、`install.ps1` の内容、attestation を確認 |
 
@@ -55,4 +55,6 @@ ZIP の名前とハッシュを読みます。そのため ZIP の名前は `pow
 `scripts/QuickInstall.ps1` は ASCII だけで書きます (`scripts/Lint.ps1` が確認します)。
 
 e2e テスト (`tests/e2e/Test-QuickInstall.ps1`) は環境変数 `POWERTOY_WALKER_DOWNLOAD_URL` で取得元を
-ローカルの HTTP サーバーに向け、公開前のリリースを同じ手順で入れて確認します。
+ローカルの HTTP サーバーに向け、公開前のリリースを同じ手順で入れて確認します。README の
+「コマンドで順にインストール」の4つのブロックも、取得元の URL だけを置き換えてそのまま実行します。
+ブロックは `<!-- step-by-step install: ... -->` と `<!-- end of step-by-step install -->` の間に置いてください。

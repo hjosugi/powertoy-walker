@@ -47,34 +47,71 @@ PowerToys がまだ無い場合は、先に `winget install Microsoft.PowerToys 
 PowerToys を管理者として実行している場合、インストーラーからは終了できないため、
 タスクトレイのメニューから終了してから実行します。
 
-## ZIP から手動でインストール
+何をしているか確かめながら入れたい場合は、同じ処理を分けた
+[コマンドで順にインストール](#コマンドで順にインストール) の手順を使えます。
 
-Windows 11、.NET 10 対応の PowerToys Run を対象にしています。開発時に確認した公式APIは
-[PowerToys v0.102.3001](https://github.com/microsoft/PowerToys/tree/v0.102.3001/src/modules/launcher/Wox.Plugin) です。
-PowerToys Command Palette は別の拡張APIなので、このDLLの読み込み先にはできません。
+## コマンドで順にインストール
 
-1. [Releases](https://github.com/hjosugi/powertoy-walker/releases/latest) から、使用している PowerToys と同じ
-   アーキテクチャの ZIP (`x64` または `ARM64`) を取得して展開します。`SHA256SUMS.txt` と
-   `Get-FileHash` で照合できます。
-2. タスクトレイの PowerToys メニューから PowerToys を終了します。
-3. 展開した `powertoy-walker` フォルダーで PowerShell を開き、次を実行します。
+1行インストールが行うことを、PowerShell で1つずつ実行する手順です。GitHub の最新リリースの
+ダウンロードから、展開、インストール、PowerToys の起動までをコマンドで行います。
+管理者権限は不要です。各手順のブロックを順に貼り付けて実行します。
+
+<!-- step-by-step install: tests/e2e/Test-QuickInstall.ps1 runs the four blocks below as written. -->
+
+1. 最新リリースから、PowerToys と同じアーキテクチャ (x64 / ARM64) の ZIP をダウンロードし、
+   `SHA256SUMS.txt` のハッシュと照合します。一致しなければ ZIP を消して止まります。
 
    ```powershell
-   powershell -ExecutionPolicy Bypass -File .\Install.ps1
+   $Url  = 'https://github.com/hjosugi/powertoy-walker/releases/latest/download'
+   $Arch = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment').PROCESSOR_ARCHITECTURE -replace 'AMD64', 'x64'
+   $Work = (New-Item -ItemType Directory "$env:TEMP\powertoy-walker-$(Get-Date -Format yyyyMMdd-HHmmss)").FullName
+   Invoke-WebRequest "$Url/SHA256SUMS.txt" -OutFile "$Work\SHA256SUMS.txt" -UseBasicParsing
+   $Hash, $Name = -split (Select-String -LiteralPath "$Work\SHA256SUMS.txt" -Pattern "-$Arch\.zip$").Line
+   Invoke-WebRequest "$Url/$Name" -OutFile "$Work\$Name" -UseBasicParsing
+   if ((Get-FileHash "$Work\$Name").Hash -ne $Hash) { Remove-Item "$Work\$Name"; throw "SHA-256 mismatch: $Name" }
    ```
 
-4. PowerToys を起動し、設定の **PowerToys Run** をオンにします (最近の PowerToys では既定でオフです)。
-   **PowerToys Run → プラグイン** に powertoy-walker が有効な状態で並びます。
+2. ZIP を展開します。
 
-手動の場合は、3つのDLL・`plugin.json`・`Images` を含むフォルダーを次へコピーします。
+   ```powershell
+   Expand-Archive "$Work\$Name" $Work
+   ```
+
+3. PowerToys を終了し、展開した `Install.ps1` でプラグインを入れます。前のバージョンは
+   `%LOCALAPPDATA%\Microsoft\PowerToys\powertoy-walker-backups` に退避します。
+
+   ```powershell
+   Get-Process PowerToys* -ErrorAction SilentlyContinue | Stop-Process -Force -PassThru | Wait-Process
+   powershell -NoProfile -ExecutionPolicy Bypass -File "$Work\powertoy-walker\Install.ps1"
+   ```
+
+4. PowerToys Run をオンにして (最近の PowerToys では既定でオフです)、PowerToys を起動します。
+
+   ```powershell
+   $Settings = "$env:LOCALAPPDATA\Microsoft\PowerToys\settings.json"
+   if (Test-Path $Settings) { [IO.File]::WriteAllText($Settings, ([IO.File]::ReadAllText($Settings) -replace '("PowerToys Run"\s*:\s*)false', '${1}true')) }
+   $PowerToys = "$env:LOCALAPPDATA\PowerToys", "$env:ProgramFiles\PowerToys" | Where-Object { Test-Path "$_\PowerToys.exe" } | Select-Object -First 1
+   Start-Process "$PowerToys\PowerToys.exe" -WorkingDirectory $PowerToys
+   ```
+
+<!-- end of step-by-step install -->
+
+PowerToys Run (既定は Alt+Space) で `w:` と入力し、窓の一覧が出れば完了です。出ない場合は
+PowerToys の設定で **PowerToys Run** と、その **プラグイン** の powertoy-walker がオンか確認します。
+
+プラグインは次のフォルダーに入ります。アンインストールは PowerToys を終了してからこのフォルダーを
+削除するか、1行インストールの `-Uninstall` を使います。
 
 ```text
 %LOCALAPPDATA%\Microsoft\PowerToys\PowerToys Run\Plugins\powertoy-walker
 ```
 
 組み込みの **Window Walker** と同じ窓が重複して出る場合は、組み込み側のグローバル検索への
-参加をオフにしてください。アンインストールは PowerToys 終了後、このフォルダーを削除します。
-インストーラーは更新前のプラグインを `Microsoft\PowerToys\powertoy-walker-backups` に保存します。
+参加をオフにしてください。
+
+Windows 11、.NET 10 対応の PowerToys Run を対象にしています。開発時に確認した公式APIは
+[PowerToys v0.102.3001](https://github.com/microsoft/PowerToys/tree/v0.102.3001/src/modules/launcher/Wox.Plugin) です。
+PowerToys Command Palette は別の拡張APIなので、このDLLの読み込み先にはできません。
 
 ## グローバル検索と任意の prefix
 
@@ -176,7 +213,8 @@ pwsh scripts/Lint.ps1
 最小化からの復元、ウィンドウを閉じる操作、仮想デスクトップ間の切り替え、設定の反映、終了までを
 確認しています (`tests/e2e/Test-PowerToysRun.ps1`)。続けて、ビルドした ZIP をリリースと同じ形で
 ローカルから配信し、Windows PowerShell で1行インストール、改ざんした ZIP の拒否、上書き、
-PowerToys Run が既定でオフの状態からの有効化、アンインストールを確認します (`tests/e2e/Test-QuickInstall.ps1`)。
+PowerToys Run が既定でオフの状態からの有効化、アンインストールと、README の「コマンドで順にインストール」の
+4つのブロックをそのまま実行した結果を確認します (`tests/e2e/Test-QuickInstall.ps1`)。
 ランナー上の確認のため、複数モニターや管理者権限の窓は対象外です。
 
 ## リリース
