@@ -159,7 +159,8 @@ function Wait-QueryResult([string]$Query, [scriptblock]$IsDone, [string]$Expecte
 # Sends a query, then returns once a result satisfies $Matcher.
 function Search-Launcher([string]$Query, [scriptblock]$Matcher) {
     try {
-        Wait-QueryResult $Query { @(Get-ResultName | Where-Object $Matcher).Count -gt 0 } "a matching result for '$Query'" | Out-Null
+        $Found = { @(Get-ResultName | Where-Object $Matcher).Count -gt 0 }
+        Wait-QueryResult -Query $Query -IsDone $Found -Expected "a matching result for '$Query'" | Out-Null
     }
     finally {
         Write-Host "      '$Query' shows: $(@(Get-ResultName) -join ' | ')"
@@ -234,10 +235,11 @@ try {
     Invoke-Check 'A keyword query lists only the windows that match it' {
         # Letters in order anywhere in a title used to match too: e, 2, e in C:\Windows\system32\wsl.exe.
         try {
-            Wait-QueryResult 'w: e2e' {
+            $OnlyMatches = {
                 $Names = @(Get-ResultName)
                 @($Names -match '^walker-e2e-(alpha|beta) : ').Count -eq 2 -and @($Names -notmatch 'e2e').Count -eq 0
-            } 'both test windows, and no window without e2e in its name' | Out-Null
+            }
+            Wait-QueryResult -Query 'w: e2e' -IsDone $OnlyMatches -Expected 'both test windows, and no window without e2e in its name' | Out-Null
         }
         finally {
             Write-Host "      'w: e2e' shows: $(@(Get-ResultName) -join ' | ')"
