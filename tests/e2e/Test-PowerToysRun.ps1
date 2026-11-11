@@ -139,11 +139,27 @@ function Send-Query([string]$Query) {
     [System.Windows.Forms.SendKeys]::SendWait($Query)
 }
 
+# Sends a query, then waits until $IsDone holds for the results. Another window can take the
+# foreground while the keys are typed (on the runners, a WSL update prompt or the runner's own
+# console), which hides the launcher and loses the query, so it is sent again every 5 seconds.
+# Script blocks see the variables of their callers, so these names must not repeat Wait-Until's.
+function Wait-QueryResult([string]$Query, [scriptblock]$IsDone, [string]$Expected) {
+    $Retry = @{ At = [DateTime]::UtcNow.AddSeconds(5) }
+    Send-Query $Query
+    Wait-Until {
+        if (& $IsDone) { return $true }
+        if ([DateTime]::UtcNow -gt $Retry.At) {
+            Send-Query $Query
+            $Retry.At = [DateTime]::UtcNow.AddSeconds(5)
+        }
+        $false
+    } $Expected -Seconds 30
+}
+
 # Sends a query, then returns once a result satisfies $Matcher.
 function Search-Launcher([string]$Query, [scriptblock]$Matcher) {
-    Send-Query $Query
     try {
-        Wait-Until { @(Get-ResultName | Where-Object $Matcher).Count -gt 0 } "a matching result for '$Query'" | Out-Null
+        Wait-QueryResult $Query { @(Get-ResultName | Where-Object $Matcher).Count -gt 0 } "a matching result for '$Query'" | Out-Null
     }
     finally {
         Write-Host "      '$Query' shows: $(@(Get-ResultName) -join ' | ')"
@@ -217,9 +233,8 @@ try {
 
     Invoke-Check 'A keyword query lists only the windows that match it' {
         # Letters in order anywhere in a title used to match too: e, 2, e in C:\Windows\system32\wsl.exe.
-        Send-Query 'w: e2e'
         try {
-            Wait-Until {
+            Wait-QueryResult 'w: e2e' {
                 $Names = @(Get-ResultName)
                 @($Names -match '^walker-e2e-(alpha|beta) : ').Count -eq 2 -and @($Names -notmatch 'e2e').Count -eq 0
             } 'both test windows, and no window without e2e in its name' | Out-Null
