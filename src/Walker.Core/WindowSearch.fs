@@ -67,30 +67,84 @@ module WindowSearch =
         ]
         |> String.concat " · "
 
+    let private sameLetter (left: char) (right: char) =
+        Char.ToUpperInvariant left = Char.ToUpperInvariant right
+
+    /// Words start at the beginning of the text, after a character that is neither a letter
+    /// nor a digit, and at a capital that follows a lower-case letter (the T of WezTerm).
+    let private isWordStart (text: string) index =
+        Char.IsLetterOrDigit text[index]
+        && (index = 0
+            || not (Char.IsLetterOrDigit text[index - 1])
+            || Char.IsLower text[index - 1] && Char.IsUpper text[index])
+
     [<TailCall>]
-    let rec private matchesInOrder (term: string) (text: string) termAt textAt =
+    let rec private nextWordStart (text: string) index =
+        if index >= text.Length then -1
+        elif isWordStart text index then index
+        else nextWordStart text (index + 1)
+
+    [<TailCall>]
+    let rec private occursAtWordStart (term: string) (text: string) from =
+        match text.IndexOf(term, from, StringComparison.OrdinalIgnoreCase) with
+        | -1 -> false
+        | index -> isWordStart text index || occursAtWordStart term text (index + 1)
+
+    /// The rest of the term are the first letters of the next words, one word per letter.
+    [<TailCall>]
+    let rec private matchesInitials (term: string) (text: string) termAt textAt =
+        termAt = term.Length
+        || (match nextWordStart text textAt with
+            | -1 -> false
+            | start ->
+                sameLetter text[start] term[termAt]
+                && matchesInitials term text (termAt + 1) (start + 1))
+
+    /// The rest of the term appears in order before this run of letters and digits ends.
+    [<TailCall>]
+    let rec private matchesWithinWord (term: string) (text: string) termAt textAt =
         termAt = term.Length
         || textAt < text.Length
-           && matchesInOrder
+           && Char.IsLetterOrDigit text[textAt]
+           && matchesWithinWord
                term
                text
-               (if Char.ToUpperInvariant text[textAt] = Char.ToUpperInvariant term[termAt] then
+               (if sameLetter text[textAt] term[termAt] then
                     termAt + 1
                 else
                     termAt)
                (textAt + 1)
 
-    let private isSubsequence (term: string) (text: string) = matchesInOrder term text 0 0
+    /// Abbreviations start at a word: initials of consecutive words ("vsc" for Visual Studio
+    /// Code), or letters in order within one word ("frfx" for Firefox). Letters scattered
+    /// across a long title would match almost any short query, so they do not count.
+    [<TailCall>]
+    let rec private abbreviationQuality (term: string) (text: string) from best =
+        match nextWordStart text from with
+        | -1 -> best
+        | start ->
+            let quality =
+                if not (sameLetter text[start] term[0]) then 0
+                elif matchesInitials term text 1 (start + 1) then 60
+                elif matchesWithinWord term text 1 (start + 1) then 40
+                else 0
+
+            if quality = 60 then
+                quality
+            else
+                abbreviationQuality term text (start + 1) (max best quality)
 
     let private matchQuality fuzzy (term: string) (text: string) =
         if String.Equals(term, text, StringComparison.OrdinalIgnoreCase) then
             100
         elif text.StartsWith(term, StringComparison.OrdinalIgnoreCase) then
             90
+        elif occursAtWordStart term text 0 then
+            80
         elif text.Contains(term, StringComparison.OrdinalIgnoreCase) then
-            75
-        elif fuzzy && isSubsequence term text then
-            40
+            70
+        elif fuzzy then
+            abbreviationQuality term text 0 0
         else
             0
 

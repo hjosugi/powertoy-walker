@@ -108,6 +108,75 @@ let private searchTests check =
 
     check "unrelated queries never get a boosted result" (handles GlobalQuery "zzzz" |> List.isEmpty)
 
+    let desktop =
+        [
+            { firefox with
+                Handle = 11L
+                Title = "Main.fs - powertoy-walker - Visual Studio Code"
+                AppName = "Visual Studio Code"
+                ProcessName = "Code"
+            }
+            { firefox with
+                Handle = 12L
+                Title = "nvim ~/ghq/github.com/hjosugi/powertoy-walker"
+                AppName = "WezTerm"
+                ProcessName = "wezterm-gui"
+            }
+            { firefox with
+                Handle = 13L
+                Title = "GitHub - hjosugi/powertoy-walker - Google Chrome"
+                AppName = "Google Chrome"
+                ProcessName = "chrome"
+            }
+            { firefox with
+                Handle = 14L
+                Title = "memo.txt - Notepad"
+                AppName = "Notepad"
+                ProcessName = "Notepad"
+            }
+            { firefox with
+                Handle = 15L
+                Title = "Spotify Premium"
+                AppName = "Spotify"
+                ProcessName = "Spotify"
+            }
+        ]
+
+    let onDesktop text =
+        WindowSearch.search defaults KeywordQuery None text desktop
+        |> List.map _.Window.Handle
+        |> List.sort
+
+    // Letters in order across a whole title made "note" and "spot" match every window here.
+    check "abbreviations do not match letters scattered across a title" (onDesktop "note" = [ 14L ])
+    check "a short query lists only the windows it names" (onDesktop "spot" = [ 15L ])
+    check "initials of consecutive words match" (onDesktop "vsc" = [ 11L ])
+    check "initials include capitals within a word" (onDesktop "wt" = [ 12L ])
+    check "initials can match inside a title" (onDesktop "pw" = [ 11L; 12L; 13L ])
+
+    check
+        "a match at a word start ranks above one inside a word"
+        ((WindowSearch.search
+            defaults
+            KeywordQuery
+            None
+            "mail"
+            [
+                { firefox with
+                    Handle = 21L
+                    Title = "Inbox - Gmail"
+                    LastActivated = 100L
+                }
+                { firefox with
+                    Handle = 22L
+                    Title = "Inbox - Mail"
+                    LastActivated = 1L
+                }
+            ]
+          |> List.map _.Window.Handle)
+            =
+            [ 22L; 21L ])
+
     check
         "minimized windows can be excluded"
         (handlesWith

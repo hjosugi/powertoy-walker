@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The Release workflow runs these same jobs, and publishes the packages they tested.
+  workflow_call:
 
 permissions:
   contents: read
@@ -52,6 +54,8 @@ jobs:
           if ($Install.ExitCode -ne 0) { throw "PowerToys setup exited with $($Install.ExitCode)." }
       - name: End-to-end test in PowerToys Run
         run: ./tests/e2e/Test-PowerToysRun.ps1 -Zip (Get-Item dist/*.zip).FullName -OutputDirectory "$env:RUNNER_TEMP/e2e"
+      - name: End-to-end test of the one-line install
+        run: ./tests/e2e/Test-QuickInstall.ps1 -Zip (Get-Item dist/*.zip).FullName -OutputDirectory "$env:RUNNER_TEMP/e2e/quick-install"
       - uses: actions/upload-artifact@v7
         if: always()
         with:

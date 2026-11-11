@@ -1,0 +1,119 @@
+name: Release
+
+# Pushing a tag such as v0.1.1 publishes that version. See RELEASING.md.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Check the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: version
+        name: Match the tag to main, plugin.json and CHANGELOG.md
+        run: |
+          $Version = (Get-Content src/PowerToyWalker/plugin.json -Raw | ConvertFrom-Json).Version
+          if ("v$Version" -cne $env:GITHUB_REF_NAME) {
+            throw "The tag $env:GITHUB_REF_NAME does not match version $Version in plugin.json."
+          }
+          & git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) { throw "The tag $env:GITHUB_REF_NAME is not on main." }
+          ./scripts/Get-ReleaseNotes.ps1 -Version $Version
+          "version=$Version" >> $env:GITHUB_OUTPUT
+
+  test:
+    name: Test
+    needs: prepare
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish
+    needs: [prepare, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      # The ZIPs that passed the end-to-end tests in the test job, not a rebuild.
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: package-*
+          path: release
+          merge-multiple: true
+      - name: Add the installer and checksums
+        run: |
+          expected="powertoy-walker-$VERSION-ARM64.zip powertoy-walker-$VERSION-x64.zip"
+          actual="$(cd release && printf '%s\n' * | sort | xargs)"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::Expected $expected, found $actual"
+            exit 1
+          fi
+          cp scripts/QuickInstall.ps1 release/install.ps1
+          (cd release && sha256sum -- *.zip install.ps1 > SHA256SUMS.txt)
+          cat release/SHA256SUMS.txt
+      - uses: actions/attest@v4
+        with:
+          subject-checksums: release/SHA256SUMS.txt
+      - name: Write the release notes
+        shell: pwsh
+        run: ./scripts/Get-ReleaseNotes.ps1 -Version $env:VERSION -Checksums release/SHA256SUMS.txt -OutFile "$env:RUNNER_TEMP/notes.md"
+      - name: Create the release
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --verify-tag --latest --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
+
+  verify:
+    name: Verify the download
+    needs: [prepare, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: read
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      # Downloads what the README's one-line install downloads, from the public URLs.
+      - name: Download the latest release as the installer does
+        run: |
+          base="https://github.com/$GITHUB_REPOSITORY/releases/latest/download"
+          mkdir "$RUNNER_TEMP/download" && cd "$RUNNER_TEMP/download"
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsSL -o SHA256SUMS.txt "$base/SHA256SUMS.txt" &&
+              grep -q "powertoy-walker-$VERSION-x64.zip" SHA256SUMS.txt; then break; fi
+            echo "Attempt $attempt: the latest release is not $VERSION yet."
+            sleep 10
+          done
+          grep -q "powertoy-walker-$VERSION-x64.zip" SHA256SUMS.txt
+          while read -r _ name; do curl -fsSL -o "$name" "$base/$name"; done < SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          cmp install.ps1 "$GITHUB_WORKSPACE/scripts/QuickInstall.ps1"
+      - name: Verify the attestations
+        working-directory: ${{ runner.temp }}/download
+        run: |
+          for zip in *.zip; do gh attestation verify "$zip" --repo "$GITHUB_REPOSITORY"; done

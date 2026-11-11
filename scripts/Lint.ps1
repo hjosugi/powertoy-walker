@@ -17,6 +17,11 @@ try {
         if ($LASTEXITCODE -ne 0) { $Failures.Add("FSharpLint: $Project") }
     }
 
+    # Windows PowerShell decodes an "irm" download without a charset as Latin-1.
+    if ((Get-Content scripts/QuickInstall.ps1 -Raw) -match '[^\x00-\x7F]') {
+        $Failures.Add('scripts/QuickInstall.ps1 must stay ASCII: it runs as "irm ... | iex".')
+    }
+
     if (-not (Get-Module -ListAvailable PSScriptAnalyzer | Where-Object Version -EQ $AnalyzerVersion)) {
         Install-Module PSScriptAnalyzer -RequiredVersion $AnalyzerVersion -Scope CurrentUser -Force
     }

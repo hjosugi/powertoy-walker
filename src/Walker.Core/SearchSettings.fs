@@ -70,7 +70,8 @@ module SearchSettings =
             {
                 Key = "FuzzyMatching"
                 Label = "Enable fuzzy matching"
-                Description = "Also match characters in order, such as 'frfx' for Firefox."
+                Description =
+                    "Also match abbreviations: the initials of words, such as 'vsc' for Visual Studio Code, or letters in order within a word, such as 'frfx' for Firefox."
                 Get = _.FuzzyMatching
                 Set = fun value options -> { options with FuzzyMatching = value }
             }

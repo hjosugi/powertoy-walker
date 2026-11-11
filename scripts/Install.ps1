@@ -25,4 +25,4 @@ foreach ($File in $Files) {
     Copy-Item (Join-Path $PackageDirectory $File) $Target
 }
 Copy-Item (Join-Path $PackageDirectory 'Images/walker.png') "$Target/Images/"
-Write-Host "Installed to $Target. Start PowerToys, then enable powertoy-walker in PowerToys Run settings."
+Write-Host "Installed to $Target. Start PowerToys to load it."
