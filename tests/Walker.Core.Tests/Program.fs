@@ -3,6 +3,7 @@ module Program
 open System
 open System.IO
 open System.Text.Json
+open Microsoft.FSharp.Reflection
 open Walker.Core
 
 let private firefox =
@@ -263,11 +264,15 @@ let private labelTests check =
 
     check
         "plugin label follows the app name on the subtitle"
-        (WindowSearch.resultSubtitle firefox = "Firefox (powertoy-walker)")
+        (WindowSearch.resultSubtitle Strings.english firefox = "Firefox (powertoy-walker)")
 
     check
         "window status follows the app and plugin label"
-        (WindowSearch.resultSubtitle windows[2] = "Terminal (powertoy-walker) · Other desktop")
+        (WindowSearch.resultSubtitle Strings.english windows[2] = "Terminal (powertoy-walker) · Other desktop")
+
+    check
+        "window status is in the chosen language"
+        (WindowSearch.resultSubtitle Strings.japanese windows[1] = "Text Editor (powertoy-walker) · 最小化")
 
     check
         "the plugin label is not part of the searchable window text"
@@ -276,6 +281,76 @@ let private labelTests check =
     check
         "empty window title falls back to the app name"
         (WindowSearch.resultTitle { firefox with Title = "" } = "Firefox")
+
+/// Every string in a catalog, settings included.
+let private textsOf (strings: Strings) =
+    FSharpValue.GetRecordFields strings
+    |> Array.toList
+    |> List.collect (function
+        | :? string as text -> [ text ]
+        | :? SettingText as setting -> [ setting.Label; setting.Description ]
+        | other -> invalidOp $"Unexpected field value {other}")
+
+let private languageTests check =
+    let english = textsOf Strings.english
+
+    check
+        "every language has every string, and nothing is left in English"
+        (Strings.all
+         |> List.forall (fun (code, strings) ->
+             let texts = textsOf strings
+
+             texts |> List.forall (String.IsNullOrWhiteSpace >> not)
+             && (code = "en" || List.forall2 (<>) texts english)))
+
+    check
+        "each setting shows its own text"
+        (Strings.all
+         |> List.forall (fun (_, strings) ->
+             SearchSettings.all
+             |> List.map (fun setting -> (setting.Text strings).Label)
+             |> List.distinct
+             |> List.length
+                 =
+                 SearchSettings.all.Length))
+
+    check "a Japanese display language shows Japanese" (Strings.choose "" "ja-JP" = Strings.japanese)
+    check "language tags match without regard to case or region" (Strings.forLanguage "JA" = Strings.japanese)
+    check "the PowerToys language comes before the display language" (Strings.choose "en-US" "ja-JP" = Strings.english)
+    check "a Japanese PowerToys language shows Japanese" (Strings.choose "ja-JP" "en-US" = Strings.japanese)
+
+    check
+        "languages without a translation show English"
+        (Strings.choose "" "fr-FR" = Strings.english
+         && Strings.choose "" "" = Strings.english)
+
+    check "the language is read from language.json" (Strings.languageOfSettings """{"language":"ja-JP"}""" = "ja-JP")
+
+    check
+        "an unreadable language.json means no language was picked"
+        ([ ""; "{"; "[]"; """{"language":null}"""; """{"language":7}""" ]
+         |> List.forall (Strings.languageOfSettings >> (=) ""))
+
+    // The end-to-end test reads what to expect on screen from this file.
+    use expected =
+        Path.Combine(AppContext.BaseDirectory, "../../../../../tests/e2e/expected-text.json")
+        |> File.ReadAllText
+        |> JsonDocument.Parse
+
+    check
+        "the end-to-end test expects the plugin's own text"
+        (expected.RootElement.EnumerateObject()
+         |> Seq.forall (fun language ->
+             let strings = Strings.forLanguage language.Name
+
+             let text (name: string) =
+                 language.Value.GetProperty(name).GetString()
+
+             text "description" = strings.PluginDescription
+             && text "fuzzyMatchingLabel" = strings.FuzzyMatching.Label
+             && text "minimized" = strings.Minimized
+             && text "otherDesktop" = strings.OtherDesktop
+             && text "closeWindow" = strings.CloseWindow))
 
 let private trackingTests check =
     let handlesOf state =
@@ -359,6 +434,7 @@ let main args =
         searchTests check
         scoringTests check
         labelTests check
+        languageTests check
         trackingTests check
         settingsTests check
         manifestTests check

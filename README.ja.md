@@ -1,0 +1,244 @@
+# powertoy-walker
+
+[English](README.md) | 日本語
+
+PowerToys Run から、起動中のウィンドウへアプリのアイコン付きで切り替えるプラグインです。
+候補の下段は **`WezTerm (powertoy-walker)`** のように表示し、アプリを新しく起動する候補と
+区別できます。上段のウィンドウタイトルにはプラグイン名を付けません。
+
+| 入力 | 動作 |
+| --- | --- |
+| `firefox` | グローバル検索で Firefox のウィンドウを表示 |
+| `w: firefox` | このプラグインだけでアプリ名・プロセス名・タイトルを検索 |
+| `w: gmail` | Gmail をタイトルに含むウィンドウを検索 |
+| `w:` | 直近に使った順に一覧表示。元いたウィンドウは最後 |
+
+Enter で切り替え、最小化中なら復元します。コンテキストメニューの **ウィンドウを閉じる** または
+Ctrl+W でウィンドウに通常の終了要求を送ります。未保存の確認は対象アプリが行います。
+プロセスの強制終了は行いません。
+
+表示は日本語と英語に対応しています ([表示言語](#表示言語))。
+
+## すぐに使う
+
+[PowerToys](https://learn.microsoft.com/en-us/windows/powertoys/install) を入れた Windows で
+PowerShell を開き、次の1行を実行します。管理者権限も実行ポリシーの変更も不要です。
+
+```powershell
+irm https://github.com/hjosugi/powertoy-walker/releases/latest/download/install.ps1 | iex
+```
+
+PowerToys Run (既定は Alt+Space) を開いて `w:` と入力すると、開いている窓の一覧が出ます。
+
+インストーラーは次の順に進みます。
+
+1. PowerToys の場所 (ユーザー単位・マシン全体のどちらでも) と、そのアーキテクチャ (x64 / ARM64) を調べます。
+2. 最新リリースの `SHA256SUMS.txt` と対応する ZIP を取得し、SHA-256 が一致しなければ何も変更せずに止まります。
+3. PowerToys を終了し、ZIP 内の `Install.ps1` でプラグインを入れます (前のバージョンは退避します)。
+4. PowerToys Run がオフなら PowerToys の設定でオンにし、PowerToys を起動し直します。
+   最近の PowerToys (v0.102.3001 で確認) は Command Palette を既定にし、PowerToys Run をオフにしています。
+
+オプションを付けるときは、スクリプトブロックとして実行します。
+
+```powershell
+$Url = 'https://github.com/hjosugi/powertoy-walker/releases/latest/download/install.ps1'
+& ([scriptblock]::Create((irm $Url))) -Version 0.1.1      # バージョンを指定 (0.1.1 以降)
+& ([scriptblock]::Create((irm $Url))) -Architecture ARM64 # アーキテクチャを指定
+& ([scriptblock]::Create((irm $Url))) -Uninstall          # アンインストール
+```
+
+PowerToys がまだ無い場合は、先に `winget install Microsoft.PowerToys --source winget` などで入れます。
+PowerToys を管理者として実行している場合、インストーラーからは終了できないため、
+タスクトレイのメニューから終了してから実行します。
+
+何をしているか確かめながら入れたい場合は、同じ処理を分けた
+[コマンドで順にインストール](#コマンドで順にインストール) の手順を使えます。
+
+## コマンドで順にインストール
+
+1行インストールが行うことを、PowerShell で1つずつ実行する手順です。GitHub の最新リリースの
+ダウンロードから、展開、インストール、PowerToys の起動までをコマンドで行います。
+管理者権限は不要です。各手順のブロックを順に貼り付けて実行します。
+
+<!-- step-by-step install: tests/e2e/Test-QuickInstall.ps1 runs the four blocks below as written. -->
+
+1. 最新リリースから、PowerToys と同じアーキテクチャ (x64 / ARM64) の ZIP をダウンロードし、
+   `SHA256SUMS.txt` のハッシュと照合します。一致しなければ ZIP を消して止まります。
+
+   ```powershell
+   $Url  = 'https://github.com/hjosugi/powertoy-walker/releases/latest/download'
+   $Arch = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment').PROCESSOR_ARCHITECTURE -replace 'AMD64', 'x64'
+   $Work = (New-Item -ItemType Directory "$env:TEMP\powertoy-walker-$(Get-Date -Format yyyyMMdd-HHmmss)").FullName
+   Invoke-WebRequest "$Url/SHA256SUMS.txt" -OutFile "$Work\SHA256SUMS.txt" -UseBasicParsing
+   $Hash, $Name = -split (Select-String -LiteralPath "$Work\SHA256SUMS.txt" -Pattern "-$Arch\.zip$").Line
+   Invoke-WebRequest "$Url/$Name" -OutFile "$Work\$Name" -UseBasicParsing
+   if ((Get-FileHash "$Work\$Name").Hash -ne $Hash) { Remove-Item "$Work\$Name"; throw "SHA-256 mismatch: $Name" }
+   ```
+
+2. ZIP を展開します。
+
+   ```powershell
+   Expand-Archive "$Work\$Name" $Work
+   ```
+
+3. PowerToys を終了し、展開した `Install.ps1` でプラグインを入れます。前のバージョンは
+   `%LOCALAPPDATA%\Microsoft\PowerToys\powertoy-walker-backups` に退避します。
+
+   ```powershell
+   Get-Process PowerToys* -ErrorAction SilentlyContinue | Stop-Process -Force -PassThru | Wait-Process
+   powershell -NoProfile -ExecutionPolicy Bypass -File "$Work\powertoy-walker\Install.ps1"
+   ```
+
+4. PowerToys Run をオンにして (最近の PowerToys では既定でオフです)、PowerToys を起動します。
+
+   ```powershell
+   $Settings = "$env:LOCALAPPDATA\Microsoft\PowerToys\settings.json"
+   if (Test-Path $Settings) { [IO.File]::WriteAllText($Settings, ([IO.File]::ReadAllText($Settings) -replace '("PowerToys Run"\s*:\s*)false', '${1}true')) }
+   $PowerToys = "$env:LOCALAPPDATA\PowerToys", "$env:ProgramFiles\PowerToys" | Where-Object { Test-Path "$_\PowerToys.exe" } | Select-Object -First 1
+   Start-Process "$PowerToys\PowerToys.exe" -WorkingDirectory $PowerToys
+   ```
+
+<!-- end of step-by-step install -->
+
+PowerToys Run (既定は Alt+Space) で `w:` と入力し、窓の一覧が出れば完了です。出ない場合は
+PowerToys の設定で **PowerToys Run** と、その **プラグイン** の powertoy-walker がオンか確認します。
+
+プラグインは次のフォルダーに入ります。アンインストールは PowerToys を終了してからこのフォルダーを
+削除するか、1行インストールの `-Uninstall` を使います。
+
+```text
+%LOCALAPPDATA%\Microsoft\PowerToys\PowerToys Run\Plugins\powertoy-walker
+```
+
+組み込みの **Window Walker** と同じ窓が重複して出る場合は、組み込み側のグローバル検索への
+参加をオフにしてください。
+
+Windows 11、.NET 10 対応の PowerToys Run を対象にしています。開発時に確認した公式APIは
+[PowerToys v0.102.3001](https://github.com/microsoft/PowerToys/tree/v0.102.3001/src/modules/launcher/Wox.Plugin) です。
+PowerToys Command Palette は別の拡張APIなので、このDLLの読み込み先にはできません。
+
+## グローバル検索と任意の prefix
+
+PowerToys Run のプラグイン設定で、**直接アクティブ化コマンド (Direct activation command)** を
+`w:` から `win:` などへ変更できます。末尾に空白を登録する必要はありません。
+
+文字だけのコマンド (`w` や `win`) は設定しないでください。PowerToys Run は入力の先頭とコマンドを
+前方一致で比べ、一致すると他のプラグインを検索しません。`w` にすると `word` や `wezterm` のように
+`w` で始まる入力がすべてこのプラグインだけに届き、他のアプリを起動できなくなります。
+**グローバルの結果に含める (Include in global result)** をオンにすれば prefix と併用でき、
+オフにすれば prefix 専用になります。
+
+追加設定 (括弧内は英語表示での名前):
+
+- **グローバル検索でウィンドウを優先する** (Prefer windows in global search): 既定オン。一致する窓のスコアを加算して、
+  アプリを新規起動する候補より上位に出やすくします。他プラグインのスコア調整や利用履歴に
+  よって順位は変わるため、必ず先頭になる保証ではありません。
+- **グローバル検索でウィンドウのタイトルも照合する** (Match window titles in global search): 既定オフ。
+  オンなら prefix 無しでもタイトルを検索します。
+- **元のウィンドウを最後に並べる** (List the window you came from last): 既定オン。`w:` + Enter が Alt+Tab のように動きます。
+- **最小化したウィンドウを含める** (Include minimized windows): 既定オン。
+- **他のデスクトップのウィンドウを含める** (Include windows on other desktops): 既定オン。
+  別デスクトップへの切り替え・フォーカスの許可は Windows に従います。現在のデスクトップだけを検索する場合はオフにします。
+- **あいまい一致を使う** (Enable fuzzy matching): 既定オン。単語の頭文字 (`vsc` → Visual Studio Code、`wt` → WezTerm) や、
+  1つの単語の中で順に並ぶ文字 (`frfx` → Firefox) でも一致します。タイトルのあちこちに散らばった
+  文字では一致しません。
+
+PowerToys Run 側の **スコア調整 (Score adjustment)** も併用できます。
+照合する文字列には表示用の `(powertoy-walker)` を含めません。
+
+## 表示言語
+
+設定画面の説明とオプション、候補の下段、コンテキストメニュー、メッセージを日本語か英語で表示します。
+PowerToys の設定の **全般** にある言語 (General > Language) で選んだ言語に従い、
+「Windows の既定」のときは Windows の表示言語に従います。それ以外の言語では英語で表示します。
+言語を変えたときは、PowerToys と同じく PowerToys の再起動後に切り替わります。
+
+翻訳は [`src/Walker.Core/Strings.fs`](src/Walker.Core/Strings.fs) に言語ごとの1つのレコードとして
+まとめてあります。言語を足すときは、レコードを書いて言語コードとともに `Strings.all` に加えます。
+文字列が欠けたレコードはコンパイルできず、空の文字列や英語のまま残った文字列はテストが検出します。
+
+## ビルドとテスト
+
+.NET 10 SDK (F# コンパイラーを含みます) が必要です。Windows の PowerShell で次を実行します。
+
+```powershell
+./scripts/Build.ps1 -Architecture x64
+# ARM64 版
+./scripts/Build.ps1 -Architecture ARM64
+```
+
+`dist/powertoy-walker-<version>-<architecture>.zip` が生成されます。バージョンは `plugin.json` の値です。ホストが所有する
+`Wox.Plugin.dll` などの DLL は ZIP に同梱しません。API参照には
+[Community.PowerToys.Run.Plugin.Dependencies](https://github.com/hlaueriksson/Community.PowerToys.Run.Plugin.Dependencies)
+0.97.0 を使用します。
+
+F# で実装しているため、`plugin.json` は C# のプラグインと次の点で異なります。
+
+- **`DynamicLoading` は `true`**: F# のランタイム `FSharp.Core.dll` (MIT License) を同梱しており、
+  `false` だとホストの既定のロードコンテキストから解決できず、プラグインを読み込めません。
+- **`Language` は `csharp` のまま**: PowerToys Run はこの値で .NET プラグインを識別し、
+  `fsharp` などの値は拒否します。
+
+検索、ウィンドウ追跡の状態遷移、キャッシュの状態遷移、表示言語の選択は Windows に依存しない純粋な関数として
+`Walker.Core` にまとめてあるため、Linux でも次で回帰テストを実行できます。
+Win32 と WPF を扱う副作用の部分は `PowerToyWalker` だけにあります。
+
+```sh
+dotnet run --project tests/Walker.Core.Tests -c Release
+dotnet run --project tests/Walker.Core.Tests -c Release -- --benchmark
+dotnet build src/PowerToyWalker -c Release -p:Platform=x64
+```
+
+## 開発環境
+
+Nix があれば `nix develop` で .NET SDK、PowerShell、nixfmt が揃います (`direnv allow` で自動化もできます)。
+Nix がない場合は .NET 10 SDK と PowerShell 7 を入れてください。Windows のプラグイン本体も Linux からクロスビルドできます。
+
+VS Code でフォルダーを開くと、推奨拡張機能 (`.vscode/extensions.json`) の案内が出ます。
+
+| 操作 | 内容 |
+| --- | --- |
+| F5 **Tests** / **Benchmark** | テストまたはベンチマークをデバッガー付きで実行 |
+| F5 **PowerToys Run: install and launch (Windows)** | ビルドしてインストールし、ランチャーをデバッガー付きで起動。PowerToys を先に終了し、ユーザー単位でインストールされている必要があります |
+| F5 **PowerToys Run: attach (Windows)** | 起動中のランチャーへアタッチ |
+| タスク **test** / **format** / **lint** | テスト、整形、静的解析 |
+
+保存時に整形します。F# の整形は [Fantomas](https://fsprojects.github.io/fantomas/)、解析は
+[FSharpLint](https://fsprojects.github.io/FSharpLint/)、PowerShell の解析は PSScriptAnalyzer で、
+バージョンは `dotnet-tools.json` と `scripts/Lint.ps1` で固定しています。端末からは次で実行します。
+
+```sh
+dotnet tool restore
+dotnet fantomas src tests
+pwsh scripts/Lint.ps1
+```
+
+ウィンドウ一覧はバックグラウンドで 500 ms ごとに更新し、前面ウィンドウの変化は WinEvent
+フックで記録します。入力中の検索では不変のスナップショットだけを参照します。
+プロセス名・実行ファイル情報はプロセスIDと作成時刻をキーに最大512件キャッシュし、
+同じプロセスの情報を500msごとにファイルから読み直しません。
+アイコンはウィンドウ固有の大きい画像を優先し、実行ファイル、システムのアイコンの順に代替します。
+取得・デコードは最大2ワーカーで行い、表示側はキャッシュだけを参照します。
+ロード完了後は表示中の画像だけをUIスレッドで更新し、検索結果を追加し直しません。
+キャッシュは最大256件で、初回取得中はプラグインの画像を表示します。
+アプリがアイコンを公開しない場合や取得が許可されない場合は、代替アイコンを表示します。
+終了した窓へのアクションでは、ハンドルとプロセスIDを再確認します。
+
+検証範囲: CI (`.github/workflows/ci.yml`) では x64 (Windows Server 2025) と ARM64 (Windows 11) の
+実物の PowerToys Run v0.102.3001 に ZIP をインストールし、キー操作で読み込み、検索、切り替え、
+最小化からの復元、ウィンドウを閉じる操作、仮想デスクトップ間の切り替え、設定の反映、終了までを
+確認しています (`tests/e2e/Test-PowerToysRun.ps1`)。プラグインの表示は x64 で英語、ARM64 で日本語を確認します。続けて、ビルドした ZIP をリリースと同じ形で
+ローカルから配信し、Windows PowerShell で1行インストール、改ざんした ZIP の拒否、上書き、
+PowerToys Run が既定でオフの状態からの有効化、アンインストールと、README の「コマンドで順にインストール」の
+4つのブロックをそのまま実行した結果を確認します。この日本語版 README のブロックが英語版と同じであることも
+確かめます (`tests/e2e/Test-QuickInstall.ps1`)。
+ランナー上の確認のため、複数モニターや管理者権限の窓は対象外です。
+
+## リリース
+
+`v0.1.2` のようなタグを push すると、Release ワークフローが上記のテストを通った ZIP を
+`install.ps1`・`SHA256SUMS.txt`・artifact attestation とともに公開します。手順は
+[RELEASING.md](RELEASING.md)、変更点は [CHANGELOG.md](CHANGELOG.md) にあります。
+
+公式資料: [PowerToys Run](https://learn.microsoft.com/en-us/windows/powertoys/run)、
+[プラグイン作成チェックリスト](https://github.com/microsoft/PowerToys/blob/main/doc/devdocs/modules/launcher/new-plugin-checklist.md)。

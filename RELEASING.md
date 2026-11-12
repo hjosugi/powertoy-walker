@@ -1,43 +1,45 @@
-# リリース手順
+# Releasing
 
-`v` で始まるタグを push すると、[Release ワークフロー](.github/workflows/release.yml) が
-テストからリリースの作成までを行います。手元でビルドした ZIP はアップロードしません。
+Pushing a tag that starts with `v` runs the [Release workflow](.github/workflows/release.yml),
+which tests the plugin and creates the release. ZIPs built on your own machine are never uploaded.
 
-## 手順
+## Steps
 
-1. `src/PowerToyWalker/plugin.json` の `Version` を上げます (例: `0.1.2`)。
-2. `CHANGELOG.md` の先頭に `## 0.1.2 - YYYY-MM-DD` の節を足し、変更点を書きます。
-   この節がそのままリリースノートの冒頭になります。
-3. コミットして `main` に push し、CI が通ることを確認します。
-4. タグを付けて push します。
+1. Raise `Version` in `src/PowerToyWalker/plugin.json` (for example to `0.1.2`).
+2. In `CHANGELOG.md`, rename the `## Unreleased` heading to `## 0.1.2 - YYYY-MM-DD`, and check
+   the changes listed under it. This section becomes the start of the release notes.
+3. Commit, push to `main`, and check that CI passes.
+4. Tag the commit and push the tag.
 
    ```sh
    git tag v0.1.2
    git push origin v0.1.2
    ```
 
-5. Actions の **Release** の実行が終わったら、[Releases](https://github.com/hjosugi/powertoy-walker/releases)
-   に `v0.1.2` が Latest として出ていることを確認します。
+5. When the **Release** run in Actions has finished, check that `v0.1.2` is the Latest release in
+   [Releases](https://github.com/hjosugi/powertoy-walker/releases).
 
-## ワークフローが行うこと
+After the release, add a new `## Unreleased` section at the top of `CHANGELOG.md` for the next changes.
 
-| ジョブ | 内容 |
+## What the workflow does
+
+| Job | What it does |
 | --- | --- |
-| Check the version | タグが `v` + `plugin.json` の `Version` と一致し、`main` 上のコミットで、`CHANGELOG.md` に節があることを確認 |
-| Test | CI と同じジョブ。Lint、単体テスト、x64 と ARM64 の実物の PowerToys Run での e2e テスト、1行インストールと README のコマンド手順の e2e テスト |
-| Publish | Test が作った ZIP をそのまま使い、`install.ps1` と `SHA256SUMS.txt` を添えて、artifact attestation を付け、リリースを作成 |
-| Verify the download | README の1行インストールと同じ公開 URL から取得し、SHA-256、`install.ps1` の内容、attestation を確認 |
+| Check the version | Checks that the tag is `v` + `Version` in `plugin.json`, that it points to a commit on `main`, and that `CHANGELOG.md` has a section for it |
+| Test | The same jobs as CI: lint, unit tests, end-to-end tests in a real PowerToys Run on x64 (in English) and ARM64 (in Japanese), and end-to-end tests of the one-line install and the README's step-by-step install |
+| Publish | Takes the ZIPs that Test built, as they are, adds `install.ps1` and `SHA256SUMS.txt`, attests them, and creates the release |
+| Verify the download | Downloads from the same public URLs as the README's one-line install, and checks the SHA-256, the contents of `install.ps1`, and the attestations |
 
-リリースに含まれるファイル:
+The files in a release:
 
 - `powertoy-walker-<version>-x64.zip` / `powertoy-walker-<version>-ARM64.zip`
-- `install.ps1` (`scripts/QuickInstall.ps1` と同じ内容)
+- `install.ps1` (the same as `scripts/QuickInstall.ps1`)
 - `SHA256SUMS.txt`
 
-## 失敗したとき
+## When it fails
 
-- **Publish より前で失敗した場合**: リリースはまだ作られていません。修正をコミットしてから、
-  タグを付け直して push します。
+- **Before Publish**: no release has been created yet. Commit the fix, then move the tag to it
+  and push it again.
 
   ```sh
   git push origin :refs/tags/v0.1.2
@@ -45,16 +47,23 @@
   git push origin v0.1.2
   ```
 
-- **Publish 以降で失敗した場合**: 公開済みのリリースやタグは書き換えず、次のパッチバージョンで出し直します。
+- **During or after Publish**: do not rewrite a published release or tag. Release the next patch version instead.
 
-## 1行インストールの仕組み
+## How the one-line install works
 
-`install.ps1` は `releases/latest/download/` から `SHA256SUMS.txt` を取得し、PowerToys のアーキテクチャに合う
-ZIP の名前とハッシュを読みます。そのため ZIP の名前は `powertoy-walker-<version>-<x64|ARM64>.zip` の形を
-保ってください。Windows PowerShell は charset の無いダウンロードを Latin-1 として読むので、
-`scripts/QuickInstall.ps1` は ASCII だけで書きます (`scripts/Lint.ps1` が確認します)。
+`install.ps1` downloads `SHA256SUMS.txt` from `releases/latest/download/`, and reads from it the
+name and hash of the ZIP for the PowerToys architecture. Keep the ZIP names in the form
+`powertoy-walker-<version>-<x64|ARM64>.zip`. Windows PowerShell reads a download without a
+charset as Latin-1, so `scripts/QuickInstall.ps1` is written in ASCII only (`scripts/Lint.ps1` checks this).
 
-e2e テスト (`tests/e2e/Test-QuickInstall.ps1`) は環境変数 `POWERTOY_WALKER_DOWNLOAD_URL` で取得元を
-ローカルの HTTP サーバーに向け、公開前のリリースを同じ手順で入れて確認します。README の
-「コマンドで順にインストール」の4つのブロックも、取得元の URL だけを置き換えてそのまま実行します。
-ブロックは `<!-- step-by-step install: ... -->` と `<!-- end of step-by-step install -->` の間に置いてください。
+The end-to-end test (`tests/e2e/Test-QuickInstall.ps1`) points the installer at a local HTTP
+server with the environment variable `POWERTOY_WALKER_DOWNLOAD_URL`, and installs the unreleased
+ZIP the same way. It also runs the four blocks of the README's "Install step by step" as written,
+replacing only the download URL. Keep the blocks between `<!-- step-by-step install: ... -->` and
+`<!-- end of step-by-step install -->`. `README.ja.md` must have the same blocks, and the test checks it.
+
+## Translations
+
+The plugin's text is in `src/Walker.Core/Strings.fs`. When you change a string, change it in every
+language. `tests/e2e/expected-text.json` holds the text that the end-to-end test expects on
+screen, and the unit tests check that it matches `Strings.fs`.

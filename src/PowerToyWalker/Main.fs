@@ -1,12 +1,36 @@
 namespace PowerToyWalker
 
 open System
+open System.Globalization
+open System.IO
 open System.Threading
 open System.Windows.Controls
 open System.Windows.Input
 open Microsoft.PowerToys.Settings.UI.Library
 open Walker.Core
 open Wox.Plugin
+
+module private PowerToysLanguage =
+    /// The language picked in PowerToys settings, as its LanguageHelper reads it, or "" for
+    /// the Windows display language. PowerToys Run applies it to its main thread only, and
+    /// plugins answer queries on other threads, so the plugin reads the setting itself.
+    let load () =
+        let path =
+            Path.Combine(
+                Environment.GetFolderPath Environment.SpecialFolder.LocalApplicationData,
+                "Microsoft",
+                "PowerToys",
+                "language.json"
+            )
+
+        try
+            if File.Exists path then
+                Strings.languageOfSettings (File.ReadAllText path)
+            else
+                ""
+        with
+        | :? IOException
+        | :? UnauthorizedAccessException -> ""
 
 [<Sealed>]
 type Main() =
@@ -22,23 +46,23 @@ type Main() =
     let mutable disposed = 0
     let icons = new WindowIcons()
 
+    // PowerToys modules apply a new language when they restart, so it is read once.
+    let strings =
+        lazy (Strings.choose (PowerToysLanguage.load ()) CultureInfo.CurrentUICulture.Name)
+
     let activate window =
         let activated = NativeWindows.activate window
 
         if not activated then
             context
-            |> Option.iter
-                _.API.ShowMsg(
-                    WindowSearch.PluginName,
-                    "The window could not be activated. It may have closed or Windows may have blocked the focus change."
-                )
+            |> Option.iter _.API.ShowMsg(WindowSearch.PluginName, strings.Value.ActivationFailed)
 
         activated
 
     let toResult (hit: RankedWindow) =
         Result(
             Title = WindowSearch.resultTitle hit.Window,
-            SubTitle = WindowSearch.resultSubtitle hit.Window,
+            SubTitle = WindowSearch.resultSubtitle strings.Value hit.Window,
             Score = hit.Score,
             DisableUsageBasedScoring = true,
             ContextData = box hit.Window,
@@ -50,7 +74,7 @@ type Main() =
     let closeWindowItem window =
         ContextMenuResult(
             PluginName = WindowSearch.PluginName,
-            Title = $"Close window ({WindowSearch.PluginName})",
+            Title = $"{strings.Value.CloseWindow} ({WindowSearch.PluginName})",
             Glyph = "\uE711",
             FontFamily = "Segoe MDL2 Assets",
             AcceleratorKey = Key.W,
@@ -59,11 +83,13 @@ type Main() =
         )
 
     let toAdditionalOption (setting: SearchSetting) =
+        let text = setting.Text strings.Value
+
         PluginAdditionalOption(
             Key = setting.Key,
-            DisplayLabel = setting.Label,
+            DisplayLabel = text.Label,
             Value = SearchSettings.defaultValue setting,
-            DisplayDescription = setting.Description
+            DisplayDescription = text.Description
         )
 
     /// PowerToys Run reflects on this to validate plugin.json.
@@ -72,8 +98,7 @@ type Main() =
     interface IPlugin with
         member _.Name = WindowSearch.PluginName
 
-        member _.Description =
-            "Switch to open windows by app name or title, with app icons and recent windows first"
+        member _.Description = strings.Value.PluginDescription
 
         member _.Init(initContext) =
             context <- Some initContext
@@ -115,13 +140,7 @@ type Main() =
                 |> SearchSettings.toOptions
 
         member _.CreateSettingPanel() =
-            UserControl(
-                Content =
-                    TextBlock(
-                        Text =
-                            "Configure global results, the action keyword, score adjustment and options in PowerToys Run settings."
-                    )
-            )
+            UserControl(Content = TextBlock(Text = strings.Value.SettingsPanel))
 
     interface IDisposable with
         member _.Dispose() =

@@ -57,13 +57,13 @@ module WindowSearch =
         else
             window.Title
 
-    let resultSubtitle (window: WindowInfo) =
+    let resultSubtitle (strings: Strings) (window: WindowInfo) =
         [
             $"{window.AppName} ({PluginName})"
             if window.Minimized then
-                "Minimized"
+                strings.Minimized
             if not window.OnCurrentDesktop then
-                "Other desktop"
+                strings.OtherDesktop
         ]
         |> String.concat " · "
 

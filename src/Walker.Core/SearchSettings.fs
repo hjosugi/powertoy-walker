@@ -5,8 +5,7 @@ namespace Walker.Core
 type SearchSetting =
     {
         Key: string
-        Label: string
-        Description: string
+        Text: Strings -> SettingText
         Get: SearchOptions -> bool
         Set: bool -> SearchOptions -> SearchOptions
     }
@@ -16,9 +15,7 @@ module SearchSettings =
         [
             {
                 Key = "PreferWindowsInGlobalSearch"
-                Label = "Prefer windows in global search"
-                Description =
-                    "Adds a score boost to matching windows. Other plugins' score adjustments and usage history may still rank higher."
+                Text = _.PreferWindowsInGlobalSearch
                 Get = _.PreferWindowsInGlobalSearch
                 Set =
                     fun value options ->
@@ -28,9 +25,7 @@ module SearchSettings =
             }
             {
                 Key = "MatchTitlesInGlobalSearch"
-                Label = "Match window titles in global search"
-                Description =
-                    "The action keyword always searches titles. Turn this on to search titles without a keyword too."
+                Text = _.MatchTitlesInGlobalSearch
                 Get = _.MatchTitlesInGlobalSearch
                 Set =
                     fun value options ->
@@ -40,8 +35,7 @@ module SearchSettings =
             }
             {
                 Key = "CurrentWindowLast"
-                Label = "List the window you came from last"
-                Description = "With an empty keyword query, Enter switches to the previous window like Alt+Tab."
+                Text = _.CurrentWindowLast
                 Get = _.CurrentWindowLast
                 Set =
                     fun value options ->
@@ -51,8 +45,7 @@ module SearchSettings =
             }
             {
                 Key = "IncludeMinimized"
-                Label = "Include minimized windows"
-                Description = "Selecting a minimized window restores it."
+                Text = _.IncludeMinimized
                 Get = _.IncludeMinimized
                 Set =
                     fun value options ->
@@ -62,16 +55,13 @@ module SearchSettings =
             }
             {
                 Key = "AllDesktops"
-                Label = "Include windows on other desktops"
-                Description = "Turn off to search only the current virtual desktop."
+                Text = _.AllDesktops
                 Get = _.AllDesktops
                 Set = fun value options -> { options with AllDesktops = value }
             }
             {
                 Key = "FuzzyMatching"
-                Label = "Enable fuzzy matching"
-                Description =
-                    "Also match abbreviations: the initials of words, such as 'vsc' for Visual Studio Code, or letters in order within a word, such as 'frfx' for Firefox."
+                Text = _.FuzzyMatching
                 Get = _.FuzzyMatching
                 Set = fun value options -> { options with FuzzyMatching = value }
             }

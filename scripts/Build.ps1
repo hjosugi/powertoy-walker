@@ -21,7 +21,7 @@ foreach ($Assembly in 'Community.PowerToys.Run.Plugin.Walker', 'Walker.Core', 'F
 }
 Copy-Item "$Root/src/PowerToyWalker/plugin.json" $Stage -Force
 Copy-Item "$Root/src/PowerToyWalker/Images/walker.png" "$Stage/Images/" -Force
-Copy-Item "$Root/README.md", "$Root/LICENSE", "$Root/THIRD-PARTY-NOTICES.txt" $Stage -Force
+Copy-Item "$Root/README.md", "$Root/README.ja.md", "$Root/LICENSE", "$Root/THIRD-PARTY-NOTICES.txt" $Stage -Force
 Copy-Item "$PSScriptRoot/Install.ps1" $Stage -Force
 $Zip = Join-Path $Root "dist/powertoy-walker-$Version-$Architecture.zip"
 Compress-Archive -Path $Stage -DestinationPath $Zip -Force

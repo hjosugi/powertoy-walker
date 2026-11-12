@@ -11,7 +11,7 @@ $Root = Split-Path $PSScriptRoot -Parent
 $Lines = @(Get-Content "$Root/CHANGELOG.md" -Encoding utf8)
 $Heading = "^## \[?$([regex]::Escape($Version))\]?( |$)"
 $Start = [array]::FindIndex($Lines, [Predicate[string]] { param($Line) $Line -match $Heading })
-if ($Start -lt 0) { throw "CHANGELOG.md has no section for $Version. Add one headed '## $Version - YYYY-MM-DD'." }
+if ($Start -lt 0) { throw "CHANGELOG.md has no section for $Version. Rename its '## Unreleased' heading to '## $Version - YYYY-MM-DD'." }
 $End = [array]::FindIndex($Lines, $Start + 1, [Predicate[string]] { param($Line) $Line -match '^## ' })
 if ($End -lt 0) { $End = $Lines.Count }
 $Changes = if ($End -gt $Start + 1) { ($Lines[($Start + 1)..($End - 1)] -join "`n").Trim() } else { '' }
