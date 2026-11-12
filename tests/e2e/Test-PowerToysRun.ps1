@@ -133,11 +133,14 @@ function Get-ListItemName {
 function Get-ResultName { Get-ListItemName | Where-Object { $_ -ne $CloseItem } }
 
 # Summons the launcher if it is hidden and replaces its query. The launcher is left open.
+# $CameFrom keeps the window that was in front when the launcher was last summoned.
+$CameFrom = 0
 function Send-Query([string]$Query) {
     # Enter moves the focus before the launcher hides, so a hotkey sent right after it
     # only finishes hiding the launcher. Keep pressing until the launcher is in front.
     Wait-Until {
         if (-not (Test-LauncherForeground)) {
+            $script:CameFrom = Get-ForegroundHandle
             Send-KeyChord 0x12, 0x20 # Alt+Space
             Start-Sleep -Seconds 2
         }
@@ -277,13 +280,21 @@ try {
 
     Invoke-Check 'An empty keyword query lists the window you came from last, and Enter acts like Alt+Tab' {
         # Visit both in turn, so beta is the most recent window other than the one we come from.
-        foreach ($Window in $Beta, $Alpha) {
-            $Title = $Window.Title
-            Search-Launcher "w: $Title" { $_ -match $Title }
-            [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-            Assert-Foreground $Window
-        }
-        Search-Launcher 'w:' { $_ -match 'walker-e2e-beta' }
+        # Another window can take the foreground in between (on the ARM64 runner, a WSL update
+        # prompt), and then that window is the one we come from. Start over when that happens.
+        $Attempt = 0
+        do {
+            $Attempt++
+            foreach ($Window in $Beta, $Alpha) {
+                $Title = $Window.Title
+                Search-Launcher "w: $Title" { $_ -match $Title }
+                [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+                Assert-Foreground $Window
+            }
+            Search-Launcher 'w:' { $_ -match 'walker-e2e-beta' }
+            if ($CameFrom -ne $Alpha.Handle) { Write-Host "      Another window ($CameFrom) took the foreground; starting over." }
+        } while ($CameFrom -ne $Alpha.Handle -and $Attempt -lt 3)
+        if ($CameFrom -ne $Alpha.Handle) { throw 'Another window kept taking the foreground from walker-e2e-alpha.' }
         $Names = @(Get-ResultName)
         if ($Names[0] -notmatch 'walker-e2e-beta') { throw "The previous window is not first: $($Names -join ' | ')" }
         $AlphaIndex = [array]::FindIndex($Names, [Predicate[string]] { param($Name) $Name -match 'walker-e2e-alpha' })
