@@ -1,0 +1,16 @@
+{
+  "en-US": {
+    "description": "Switch to open windows by app name or title, with app icons and recent windows first",
+    "fuzzyMatchingLabel": "Enable fuzzy matching",
+    "minimized": "Minimized",
+    "otherDesktop": "Other desktop",
+    "closeWindow": "Close window"
+  },
+  "ja-JP": {
+    "description": "開いているウィンドウにアプリ名やタイトルで切り替えます。アイコン付きで、最近使ったウィンドウから並べます",
+    "fuzzyMatchingLabel": "あいまい一致を使う",
+    "minimized": "最小化",
+    "otherDesktop": "別のデスクトップ",
+    "closeWindow": "ウィンドウを閉じる"
+  }
+}

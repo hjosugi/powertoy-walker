@@ -32,8 +32,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { runner: windows-latest, architecture: x64, powertoys: x64 }
-          - { runner: windows-11-arm, architecture: ARM64, powertoys: arm64 }
+          # Each runner tests the plugin's text in one language: English, the Windows display
+          # language there, and Japanese, picked in the PowerToys settings.
+          - { runner: windows-latest, architecture: x64, powertoys: x64, language: en-US }
+          - { runner: windows-11-arm, architecture: ARM64, powertoys: arm64, language: ja-JP }
     defaults:
       run:
         shell: pwsh
@@ -53,7 +55,7 @@ jobs:
           $Install = Start-Process $Setup.FullName -ArgumentList '/install', '/quiet', '/norestart' -PassThru -Wait
           if ($Install.ExitCode -ne 0) { throw "PowerToys setup exited with $($Install.ExitCode)." }
       - name: End-to-end test in PowerToys Run
-        run: ./tests/e2e/Test-PowerToysRun.ps1 -Zip (Get-Item dist/*.zip).FullName -OutputDirectory "$env:RUNNER_TEMP/e2e"
+        run: ./tests/e2e/Test-PowerToysRun.ps1 -Zip (Get-Item dist/*.zip).FullName -OutputDirectory "$env:RUNNER_TEMP/e2e" -Language ${{ matrix.language }}
       - name: End-to-end test of the one-line install
         run: ./tests/e2e/Test-QuickInstall.ps1 -Zip (Get-Item dist/*.zip).FullName -OutputDirectory "$env:RUNNER_TEMP/e2e/quick-install"
       - uses: actions/upload-artifact@v7

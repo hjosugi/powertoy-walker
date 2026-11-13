@@ -1,14 +1,19 @@
-# 変更履歴
+# Changelog
 
-リリースノートは、このファイルの該当するバージョンの節から作られます ([RELEASING.md](RELEASING.md))。
+The notes of each release are made from its section in this file (see [RELEASING.md](RELEASING.md)).
+
+## 0.2.0 - 2026-11-13
+
+- The plugin shows its text in English or Japanese: its description and options in the settings, the subtitles, the context menu and its messages. It follows the language picked in the PowerToys settings, or the Windows display language when that is the Windows default. Other languages show English.
+- The README is now in English, with a Japanese translation in `README.ja.md`. The ZIP includes both.
 
 ## 0.1.1 - 2026-11-12
 
-- `w:` の絞り込みを直しました。あいまい一致がタイトル全体に散らばった文字にも一致していたため、`w: note` のような短い入力で関係の無い窓まで並んでいました。省略形は単語の頭文字 (`vsc` → Visual Studio Code) か、1つの単語の中で順に並ぶ文字 (`frfx` → Firefox) にだけ一致します。また、単語の先頭で一致した窓を、単語の途中で一致した窓より上に並べます。
-- PowerShell の1行でインストールできるようにしました。PowerToys の場所とアーキテクチャ (x64 / ARM64) を調べ、ZIP を `SHA256SUMS.txt` で検証してから入れ、PowerToys を起動し直します。最近の PowerToys が既定でオフにしている PowerToys Run もオンにします。`-Uninstall` で削除もできます。
-- README のインストール手順を、GitHub の最新リリースのダウンロード、SHA-256 の照合、展開、インストール、PowerToys の起動までを PowerShell のコマンドで順に行う手順にしました。CI がこの手順をそのまま実行して確かめます。
-- リリースを GitHub Actions で作るようにしました。x64 と ARM64 の実物の PowerToys Run でテストした ZIP だけを公開し、SHA-256 とビルドの来歴 (artifact attestation) を添えます。
+- Fixed filtering with `w:`. Fuzzy matching also matched letters scattered across a whole title, so a short query such as `w: note` listed unrelated windows. Abbreviations now match only the initials of words (`vsc` → Visual Studio Code) or letters in order within one word (`frfx` → Firefox). Windows that match at the start of a word also rank above those that match inside a word.
+- Added a one-line install in PowerShell. It finds PowerToys and its architecture (x64 / ARM64), checks the ZIP against `SHA256SUMS.txt` before installing it, and restarts PowerToys. It also turns on PowerToys Run, which recent PowerToys versions leave off. `-Uninstall` removes the plugin.
+- The README's install steps now download the latest GitHub release, check its SHA-256, extract it, install it and start PowerToys, all with PowerShell commands. CI runs these steps as written.
+- Releases are now made by GitHub Actions. Only ZIPs tested in a real PowerToys Run on x64 and ARM64 are published, with their SHA-256 and build provenance (artifact attestations).
 
 ## 0.1.0 - 2026-11-06
 
-- 最初のリリースです。
+- First release.

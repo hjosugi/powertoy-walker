@@ -1,9 +1,11 @@
 # End-to-end test against a real PowerToys Run on a Windows desktop session. Installs the
 # packaged plugin with its own Install.ps1, then uses the launcher as a person would:
-# summon it, type a query, read the results, and press keys.
+# summon it, type a query, read the results, and press keys. -Language picks the language
+# that PowerToys is set to, and the plugin's text is checked in that language.
 param(
     [Parameter(Mandatory)][string]$Zip,
     [Parameter(Mandatory)][string]$OutputDirectory,
+    [ValidateSet('en-US', 'ja-JP')][string]$Language = 'en-US',
     [string]$LauncherPath = "$env:LOCALAPPDATA\PowerToys\PowerToys.PowerLauncher.exe"
 )
 $ErrorActionPreference = 'Stop'
@@ -11,6 +13,9 @@ $InvokeEvent = 'Local\PowerToysRunInvokeEvent-30f26ad7-d36d-4c0e-ab02-68bb5ff3c4
 $ExitEvent = 'Local\PowerToysRunExitEvent-3e38e49d-a762-4ef1-88f2-fd4bc7481516'
 $PluginTag = '(powertoy-walker)'
 $RunData = "$env:LOCALAPPDATA\Microsoft\PowerToys\PowerToys Run"
+# The text the plugin shows. It lives in a UTF-8 JSON file, so this script stays ASCII.
+$Text = (Get-Content "$PSScriptRoot/expected-text.json" -Raw -Encoding utf8 | ConvertFrom-Json).$Language
+$CloseItem = "$($Text.closeWindow) $PluginTag"
 $Failures = [System.Collections.Generic.List[string]]::new()
 
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing, UIAutomationClient, UIAutomationTypes
@@ -110,7 +115,8 @@ function Test-NamedEvent([string]$Name) {
     $Exists
 }
 
-function Get-ResultName {
+# The names of the launcher's list items: results, and the context menu of the selected one.
+function Get-ListItemName {
     $Root = [System.Windows.Automation.AutomationElement]::RootElement
     $IsLauncher = [System.Windows.Automation.PropertyCondition]::new(
         [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $Launcher.Id)
@@ -119,10 +125,12 @@ function Get-ResultName {
         [System.Windows.Automation.ControlType]::ListItem)
     foreach ($Window in $Root.FindAll([System.Windows.Automation.TreeScope]::Children, $IsLauncher)) {
         foreach ($Item in $Window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $IsItem)) {
-            if ($Item.Current.Name -notmatch '^Close window') { $Item.Current.Name }
+            $Item.Current.Name
         }
     }
 }
+
+function Get-ResultName { Get-ListItemName | Where-Object { $_ -ne $CloseItem } }
 
 # Summons the launcher if it is hidden and replaces its query. The launcher is left open.
 function Send-Query([string]$Query) {
@@ -177,7 +185,7 @@ $Extracted = Join-Path $Package 'powertoy-walker'
 
 Invoke-Check 'The ZIP holds exactly the expected files' {
     $Expected = 'Community.PowerToys.Run.Plugin.Walker.dll', 'FSharp.Core.dll', 'Images\walker.png', 'Install.ps1',
-        'LICENSE', 'README.md', 'THIRD-PARTY-NOTICES.txt', 'Walker.Core.dll', 'plugin.json' | Sort-Object
+        'LICENSE', 'README.ja.md', 'README.md', 'THIRD-PARTY-NOTICES.txt', 'Walker.Core.dll', 'plugin.json' | Sort-Object
     $Actual = Get-ChildItem $Extracted -Recurse -File |
         ForEach-Object { $_.FullName.Substring($Extracted.Length + 1) } | Sort-Object
     if (($Expected -join ',') -ne ($Actual -join ',')) { throw "Found: $($Actual -join ', ')" }
@@ -204,6 +212,14 @@ Send-KeyChord 0x1B # Escape, for the Start menu that can open behind them
 $TestWindowProgram = Build-TestWindowProgram
 $Alpha = Open-TestWindow 'walker-e2e-alpha'
 $Beta = Open-TestWindow 'walker-e2e-beta'
+
+# PowerToys keeps the language picked in its settings in this file. Without it, PowerToys
+# follows the Windows display language, which is English on the runners.
+$LanguageFile = "$env:LOCALAPPDATA\Microsoft\PowerToys\language.json"
+$SavedLanguage = if (Test-Path $LanguageFile) { Get-Content $LanguageFile -Raw }
+if ($Language -eq 'en-US') { Remove-Item $LanguageFile -ErrorAction SilentlyContinue }
+else { Set-Content $LanguageFile (@{ language = $Language } | ConvertTo-Json -Compress) }
+
 $Launcher = Start-Process $LauncherPath -PassThru
 
 function Get-LogText {
@@ -224,12 +240,16 @@ try {
         Write-Host "      ready after $([int]([DateTime]::UtcNow - $Started).TotalSeconds) s"
     }
 
-    Invoke-Check 'The host publishes the six settings with their defaults' {
-        $Settings = Get-Content "$RunData\settings.json" -Raw | ConvertFrom-Json
-        $Options = ($Settings.plugins | Where-Object Name -EQ 'powertoy-walker').AdditionalOptions
+    Invoke-Check "The host publishes the six settings with their defaults, described in $Language" {
+        $Settings = Get-Content "$RunData\settings.json" -Raw -Encoding utf8 | ConvertFrom-Json
+        $Plugin = $Settings.plugins | Where-Object Name -EQ 'powertoy-walker'
+        $Options = $Plugin.AdditionalOptions
         $Actual = ($Options | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ','
         $Expected = 'PreferWindowsInGlobalSearch=True,MatchTitlesInGlobalSearch=False,CurrentWindowLast=True,IncludeMinimized=True,AllDesktops=True,FuzzyMatching=True'
         if ($Actual -ne $Expected) { throw "Found: $Actual" }
+        if ($Plugin.Description -ne $Text.description) { throw "The description is: $($Plugin.Description)" }
+        $Label = ($Options | Where-Object Key -EQ 'FuzzyMatching').DisplayLabel
+        if ($Label -ne $Text.fuzzyMatchingLabel) { throw "The FuzzyMatching label is: $Label" }
     }
 
     Invoke-Check 'A keyword query lists only the windows that match it' {
@@ -257,25 +277,35 @@ try {
 
     Invoke-Check 'An empty keyword query lists the window you came from last, and Enter acts like Alt+Tab' {
         # Visit both in turn, so beta is the most recent window other than the one we come from.
-        foreach ($Window in $Beta, $Alpha) {
-            $Title = $Window.Title
-            Search-Launcher "w: $Title" { $_ -match $Title }
-            [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-            Assert-Foreground $Window
-        }
-        Search-Launcher 'w:' { $_ -match 'walker-e2e-beta' }
-        $Names = @(Get-ResultName)
-        if ($Names[0] -notmatch 'walker-e2e-beta') { throw "The previous window is not first: $($Names -join ' | ')" }
-        $AlphaIndex = [array]::FindIndex($Names, [Predicate[string]] { param($Name) $Name -match 'walker-e2e-alpha' })
-        if ($AlphaIndex -ge 0 -and $AlphaIndex -ne $Names.Count - 1) { throw "The window we came from is not last: $($Names -join ' | ')" }
+        # Another window can take the foreground during the steps (on the ARM64 runner, a WSL
+        # update prompt), which rightly changes the order, so the steps start over when it is off.
+        # A fault in the plugin would put the order off on every attempt.
+        $Attempt = 0
+        do {
+            $Attempt++
+            foreach ($Window in $Beta, $Alpha) {
+                $Title = $Window.Title
+                Search-Launcher "w: $Title" { $_ -match $Title }
+                [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+                Assert-Foreground $Window
+            }
+            Search-Launcher 'w:' { $_ -match 'walker-e2e-beta' }
+            $Names = @(Get-ResultName)
+            $AlphaIndex = [array]::FindIndex($Names, [Predicate[string]] { param($Name) $Name -match 'walker-e2e-alpha' })
+            $BetaFirst = $Names[0] -match 'walker-e2e-beta'
+            $AlphaLast = $AlphaIndex -lt 0 -or $AlphaIndex -eq $Names.Count - 1
+            if (-not ($BetaFirst -and $AlphaLast)) { Write-Host "      Attempt $Attempt is out of order; starting over." }
+        } while (-not ($BetaFirst -and $AlphaLast) -and $Attempt -lt 3)
+        if (-not $BetaFirst) { throw "The previous window is not first: $($Names -join ' | ')" }
+        if (-not $AlphaLast) { throw "The window we came from is not last: $($Names -join ' | ')" }
         [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
         Assert-Foreground $Beta
     }
 
-    Invoke-Check 'Enter restores a minimized window and marks it in the subtitle' {
+    Invoke-Check "Enter restores a minimized window and marks it in the subtitle, in $Language" {
         [E2E.Win32]::ShowWindow([IntPtr]$Alpha.Handle, 6) | Out-Null # SW_MINIMIZE
         Wait-Until { [E2E.Win32]::IsIconic([IntPtr]$Alpha.Handle) } 'the window to minimize' | Out-Null
-        Search-Launcher 'w: walker-e2e-alpha' { $_ -match 'walker-e2e-alpha' -and $_ -match 'Minimized' }
+        Search-Launcher 'w: walker-e2e-alpha' { $_ -match 'walker-e2e-alpha' -and $_.Contains($Text.minimized) }
         Save-Screenshot 'minimized-result'
         [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
         Assert-Foreground $Alpha
@@ -310,16 +340,26 @@ try {
         } 'the setting to take effect' | Out-Null
     }
 
+    Invoke-Check "The selected window offers a Close window button, in $Language" {
+        Search-Launcher 'w: walker-e2e-alpha' { $_ -match 'walker-e2e-alpha' }
+        try {
+            Wait-Until { @(Get-ListItemName) -contains $CloseItem } "the button '$CloseItem'" | Out-Null
+        }
+        finally {
+            Write-Host "      The list items are: $(@(Get-ListItemName) -join ' | ')"
+        }
+    }
+
     Invoke-Check 'Ctrl+W asks the selected window to close' {
         Search-Launcher 'w: walker-e2e-alpha' { $_ -match 'walker-e2e-alpha' }
         [System.Windows.Forms.SendKeys]::SendWait('^w')
         Wait-Until { $Alpha.Process.HasExited } 'the window to close' | Out-Null
     }
 
-    Invoke-Check 'A window on another virtual desktop is marked, and Enter switches to it' {
+    Invoke-Check "A window on another virtual desktop is marked, in $Language, and Enter switches to it" {
         Send-KeyChord 0x5B, 0x11, 0x44 # Win+Ctrl+D creates and enters a new desktop
         Start-Sleep -Seconds 2
-        Search-Launcher 'w: walker-e2e-beta' { $_ -match 'walker-e2e-beta' -and $_ -match 'Other desktop' }
+        Search-Launcher 'w: walker-e2e-beta' { $_ -match 'walker-e2e-beta' -and $_.Contains($Text.otherDesktop) }
         Save-Screenshot 'other-desktop-result'
         [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
         Assert-Foreground $Beta
@@ -347,6 +387,8 @@ finally {
         if (-not $Window.Process.HasExited) { $Window.Process.Kill() }
     }
     if (-not $Launcher.HasExited) { $Launcher.Kill() }
+    if ($null -eq $SavedLanguage) { Remove-Item $LanguageFile -ErrorAction SilentlyContinue }
+    else { Set-Content $LanguageFile $SavedLanguage -NoNewline }
     Copy-Item "$RunData\Logs" (Join-Path $OutputDirectory 'logs') -Recurse -Force -ErrorAction SilentlyContinue
     Get-ChildItem $RunData -File -Filter '*.json' -Recurse -ErrorAction SilentlyContinue |
         Where-Object { $_.FullName -notmatch '\\Plugins\\' } |

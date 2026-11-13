@@ -96,11 +96,16 @@ function Invoke-WindowsPowerShell([string]$BaseUrl, [string]$Command) {
     [pscustomobject]@{ ExitCode = $ExitCode; Output = $Output -join "`n" }
 }
 
+# The code blocks of a README's step-by-step install, as written.
+function Get-ReadmeBlock([string]$Readme) {
+    $Text = [System.IO.File]::ReadAllText("$Root/$Readme")
+    $Section = [regex]::Match($Text, '(?s)<!-- step-by-step install:.*?-->(.*)<!-- end of step-by-step install -->').Groups[1].Value
+    @([regex]::Matches($Section, '(?ms)^ *```powershell\r?\n(.*?)^ *```') | ForEach-Object { $_.Groups[1].Value })
+}
+
 # The code blocks of the README's step-by-step install, downloading from $BaseUrl instead.
 function Get-ReadmeStep([string]$BaseUrl) {
-    $Readme = [System.IO.File]::ReadAllText("$Root/README.md")
-    $Section = [regex]::Match($Readme, '(?s)<!-- step-by-step install:.*?-->(.*)<!-- end of step-by-step install -->').Groups[1].Value
-    $Steps = @([regex]::Matches($Section, '(?ms)^ *```powershell\r?\n(.*?)^ *```') | ForEach-Object { $_.Groups[1].Value })
+    $Steps = Get-ReadmeBlock 'README.md'
     if ($Steps.Count -ne 4) { throw "The README has $($Steps.Count) step-by-step blocks instead of 4." }
     $Latest = 'https://github.com/hjosugi/powertoy-walker/releases/latest/download'
     if (-not $Steps[0].Contains("'$Latest'")) { throw 'The first step does not download the latest release.' }
@@ -216,6 +221,13 @@ try {
         if ($Result.Output -notmatch "powertoy-walker $([regex]::Escape($Version)) is ready") { throw 'It did not report the version.' }
         Wait-Until { Get-RunnerId } 'PowerToys to start' | Out-Null
         Assert-PluginLoadedAfter $Count
+    }
+
+    # Only README.md's blocks run below, so the translation must not drift from them.
+    Invoke-Check "The Japanese README's step-by-step install has the same commands as the English one" {
+        $English = Get-ReadmeBlock 'README.md'
+        $Japanese = Get-ReadmeBlock 'README.ja.md'
+        if (($Japanese -join "`n") -ne ($English -join "`n")) { throw 'README.ja.md differs from README.md.' }
     }
 
     Invoke-Check "The README's step-by-step install refuses a package that does not match SHA256SUMS.txt" {
