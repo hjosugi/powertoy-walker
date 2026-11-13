@@ -2,7 +2,7 @@
 
 The notes of each release are made from its section in this file (see [RELEASING.md](RELEASING.md)).
 
-## Unreleased
+## 0.2.0 - 2026-11-13
 
 - The plugin shows its text in English or Japanese: its description and options in the settings, the subtitles, the context menu and its messages. It follows the language picked in the PowerToys settings, or the Windows display language when that is the Windows default. Other languages show English.
 - The README is now in English, with a Japanese translation in `README.ja.md`. The ZIP includes both.
