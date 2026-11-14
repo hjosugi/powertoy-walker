@@ -67,6 +67,35 @@ module WindowSearch =
         ]
         |> String.concat " · "
 
+    /// How well a term matches a piece of text, from best to worst.
+    module private Quality =
+        [<Literal>]
+        let Exact = 100
+
+        [<Literal>]
+        let Prefix = 90
+
+        [<Literal>]
+        let WordStart = 80
+
+        [<Literal>]
+        let Inside = 70
+
+        /// The initials of consecutive words, such as "vsc" for Visual Studio Code.
+        [<Literal>]
+        let Initials = 60
+
+        /// Letters in order within one word, such as "frfx" for Firefox.
+        [<Literal>]
+        let WithinWord = 40
+
+        [<Literal>]
+        let NoMatch = 0
+
+        /// A title match counts for less than the same match in a name, so a window that the
+        /// term names ranks above one whose title only mentions it.
+        let ofTitle quality = quality * 9 / 10
+
     let private sameLetter (left: char) (right: char) =
         Char.ToUpperInvariant left = Char.ToUpperInvariant right
 
@@ -124,51 +153,60 @@ module WindowSearch =
         | -1 -> best
         | start ->
             let quality =
-                if not (sameLetter text[start] term[0]) then 0
-                elif matchesInitials term text 1 (start + 1) then 60
-                elif matchesWithinWord term text 1 (start + 1) then 40
-                else 0
+                if not (sameLetter text[start] term[0]) then
+                    Quality.NoMatch
+                elif matchesInitials term text 1 (start + 1) then
+                    Quality.Initials
+                elif matchesWithinWord term text 1 (start + 1) then
+                    Quality.WithinWord
+                else
+                    Quality.NoMatch
 
-            if quality = 60 then
+            // No abbreviation does better than initials, so the search can stop there.
+            if quality = Quality.Initials then
                 quality
             else
                 abbreviationQuality term text (start + 1) (max best quality)
 
     let private matchQuality fuzzy (term: string) (text: string) =
         if String.Equals(term, text, StringComparison.OrdinalIgnoreCase) then
-            100
+            Quality.Exact
         elif text.StartsWith(term, StringComparison.OrdinalIgnoreCase) then
-            90
+            Quality.Prefix
         elif occursAtWordStart term text 0 then
-            80
+            Quality.WordStart
         elif text.Contains(term, StringComparison.OrdinalIgnoreCase) then
-            70
+            Quality.Inside
         elif fuzzy then
-            abbreviationQuality term text 0 0
+            abbreviationQuality term text 0 Quality.NoMatch
         else
-            0
+            Quality.NoMatch
 
-    let private termQuality options scope (window: WindowInfo) term =
-        let quality = matchQuality options.FuzzyMatching term
+    /// Keyword queries always search titles. Global ones do when the user turns it on.
+    let private searchesTitles options scope =
+        scope = KeywordQuery || options.MatchTitlesInGlobalSearch
+
+    let private termQuality fuzzy titles (window: WindowInfo) term =
+        let quality = matchQuality fuzzy term
         let nameQuality = max (quality window.AppName) (quality window.ProcessName)
 
-        if scope = KeywordQuery || options.MatchTitlesInGlobalSearch then
-            max nameQuality (quality window.Title * 9 / 10)
+        if titles then
+            max nameQuality (Quality.ofTitle (quality window.Title))
         else
             nameQuality
 
     [<TailCall>]
-    let rec private sumQuality options scope (terms: string[]) window index sum =
+    let rec private sumQuality fuzzy titles (terms: string[]) window index sum =
         if index = terms.Length then
             Some(sum / terms.Length)
         else
-            match termQuality options scope window terms[index] with
-            | 0 -> None
-            | quality -> sumQuality options scope terms window (index + 1) (sum + quality)
+            match termQuality fuzzy titles window terms[index] with
+            | Quality.NoMatch -> None
+            | quality -> sumQuality fuzzy titles terms window (index + 1) (sum + quality)
 
     /// The average quality over all terms, or None as soon as one term misses.
-    let private averageQuality options scope (terms: string[]) window =
-        sumQuality options scope terms window 0 0
+    let private averageQuality fuzzy titles (terms: string[]) window =
+        sumQuality fuzzy titles terms window 0 0
 
     /// Most recent first, with the window the user came from optionally moved last.
     /// Spelled out because this runs on every keystroke, and comparing tuples boxes.
@@ -207,13 +245,15 @@ module WindowSearch =
                 else
                     0
 
+            let titles = searchesTitles options scope
+
             // Match quality dominates recency. The recency term breaks ties;
             // keyword searches with no terms retain MRU order even with many windows.
             let score rank window =
                 if terms.Length = 0 then
                     Some(1_000_000 - rank)
                 else
-                    averageQuality options scope terms window
+                    averageQuality options.FuzzyMatching titles terms window
                     |> Option.map (fun quality -> quality * (count + 1) + count - rank)
 
             let tryRank rank window =
