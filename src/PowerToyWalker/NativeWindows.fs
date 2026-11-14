@@ -31,10 +31,21 @@ let private processCache = BoundedCache<int * int64, ProcessMetadata>(512)
 let private shellClasses =
     set [ "Progman"; "WorkerW"; "Shell_TrayWnd"; "Shell_SecondaryTrayWnd" ]
 
+/// The process that owns a window, or 0 for a handle that names no window.
 let processIdOf (window: nativeint) =
     let mutable pid = 0u
     Win32.GetWindowThreadProcessId(window, &pid) |> ignore
     int pid
+
+/// Whether a handle still names a window of the given process. Windows reuses the
+/// handles of closed windows, so the handle alone is not enough.
+let isWindowOf pid (window: nativeint) =
+    Win32.IsWindow window && processIdOf window = pid
+
+/// Whether a handle names a window of a process other than PowerToys Run.
+let isOtherProcess (window: nativeint) =
+    let pid = processIdOf window
+    pid <> 0 && pid <> Environment.ProcessId
 
 let private topLevelWindows () =
     let found = ResizeArray<nativeint>()
@@ -57,10 +68,6 @@ let private isSwitchable (window: nativeint) =
     let owner = Win32.GetAncestor(window, Win32.GA_ROOTOWNER)
     let isOwned = owner <> window && Win32.IsWindowVisible owner
     isAppWindow || not (isToolWindow || isOwned)
-
-let private isOtherProcess (window: nativeint) =
-    let pid = processIdOf window
-    pid <> 0 && pid <> Environment.ProcessId
 
 let private windowTitle (window: nativeint) =
     let text = StringBuilder(min (Win32.GetWindowTextLength window) 4095 + 1)
@@ -246,8 +253,7 @@ let capture () : WindowInfo[] =
             }))
 
 let private stillExists (window: WindowInfo) =
-    let handle = nativeint window.Handle
-    Win32.IsWindow handle && processIdOf handle = window.ProcessId
+    isWindowOf window.ProcessId (nativeint window.Handle)
 
 let activate (window: WindowInfo) =
     stillExists window
