@@ -8,13 +8,12 @@ param(
     [string]$PowerToysDirectory = "$env:LOCALAPPDATA\PowerToys"
 )
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot/Common.ps1"
 $Root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$RunData = "$env:LOCALAPPDATA\Microsoft\PowerToys\PowerToys Run"
 $PluginDirectory = "$RunData\Plugins\powertoy-walker"
 $BackupDirectory = "$env:LOCALAPPDATA\Microsoft\PowerToys\powertoy-walker-backups"
 $GeneralSettings = "$env:LOCALAPPDATA\Microsoft\PowerToys\settings.json"
 $RunnerPath = Join-Path $PowerToysDirectory 'PowerToys.exe'
-$Failures = [System.Collections.Generic.List[string]]::new()
 
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $Zip = (Resolve-Path $Zip).Path
@@ -22,27 +21,6 @@ $ZipName = Split-Path $Zip -Leaf
 if ($ZipName -notmatch '^powertoy-walker-(?<version>.+)-(?<architecture>x64|ARM64)\.zip$') { throw "Unexpected package name $ZipName." }
 $Version = $Matches.version
 $Architecture = $Matches.architecture
-
-function Wait-Until([scriptblock]$Condition, [string]$What, [int]$Seconds = 20) {
-    $Deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
-    do {
-        $Value = & $Condition
-        if ($Value) { return $Value }
-        Start-Sleep -Milliseconds 250
-    } while ([DateTime]::UtcNow -lt $Deadline)
-    throw "Timed out waiting for $What."
-}
-
-function Invoke-Check([string]$Name, [scriptblock]$Body) {
-    try {
-        & $Body
-        Write-Host "PASS  $Name"
-    }
-    catch {
-        $Failures.Add($Name)
-        Write-Host "FAIL  $Name`n      $_"
-    }
-}
 
 # Lays out a release folder as the Release workflow publishes it.
 function Publish-TestRelease([string]$Name, [string]$Hash) {
@@ -120,12 +98,18 @@ function Invoke-ReadmeStep([string]$Name, [string[]]$Step) {
 }
 
 function Get-InitializeCount {
-    $Text = (Get-ChildItem "$RunData\Logs" -Recurse -Filter '*.txt' -ErrorAction SilentlyContinue |
-            ForEach-Object { Get-Content $_.FullName -Raw -ErrorAction SilentlyContinue }) -join "`n"
-    ([regex]::Matches($Text, 'Total initialize cost for <powertoy-walker>')).Count
+    ([regex]::Matches((Get-LogText), 'Total initialize cost for <powertoy-walker>')).Count
 }
 
 function Get-RunnerId { @(Get-Process -Name 'PowerToys' -ErrorAction SilentlyContinue).Id }
+
+# Waits for PowerToys to run again, as a new process.
+function Assert-PowerToysRestarted($Runner) {
+    $NewRunner = Wait-Until { Get-RunnerId } 'PowerToys to start again'
+    if ("$NewRunner" -eq "$Runner") { throw 'PowerToys was not restarted.' }
+}
+
+function Get-InstalledVersion { (Get-Content "$PluginDirectory\plugin.json" -Raw | ConvertFrom-Json).Version }
 
 function Get-PowerToysRunEnabled {
     if (Test-Path $GeneralSettings) { (Get-Content $GeneralSettings -Raw | ConvertFrom-Json).enabled.'PowerToys Run' }
@@ -178,14 +162,13 @@ try {
         if ($Result.Output -notmatch "Found PowerToys \($Architecture\)") { throw "It did not pick $Architecture." }
         if ((Get-PowerToysRunEnabled) -ne $true) { throw 'PowerToys Run is still off.' }
         if (($WasEnabled -ne $true) -and ($Result.Output -notmatch 'Turned on PowerToys Run')) { throw 'It did not say it turned on PowerToys Run.' }
-        $Installed = (Get-Content "$PluginDirectory\plugin.json" -Raw | ConvertFrom-Json).Version
+        $Installed = Get-InstalledVersion
         if ($Installed -ne $Version) { throw "Installed $Installed instead of $Version." }
         foreach ($File in 'Community.PowerToys.Run.Plugin.Walker.dll', 'Walker.Core.dll', 'FSharp.Core.dll', 'Images\walker.png') {
             if (-not (Test-Path "$PluginDirectory\$File")) { throw "$File is missing." }
         }
         if (@(Get-ChildItem $BackupDirectory -Directory).Count -ne $Backups + 1) { throw 'The previous version was not backed up.' }
-        $NewRunner = Wait-Until { Get-RunnerId } 'PowerToys to start again'
-        if ("$NewRunner" -eq "$Runner") { throw 'PowerToys was not restarted.' }
+        Assert-PowerToysRestarted $Runner
         Assert-PluginLoadedAfter $Count
     }
 
@@ -207,13 +190,11 @@ try {
         if ($Result.ExitCode -ne 0) { throw "It exited with $($Result.ExitCode)." }
         if (Test-Path $PluginDirectory) { throw 'The plugin is still installed.' }
         if (Test-Path $BackupDirectory) { throw 'The backups are still there.' }
-        $NewRunner = Wait-Until { Get-RunnerId } 'PowerToys to start again'
-        if ("$NewRunner" -eq "$Runner") { throw 'PowerToys was not restarted.' }
+        Assert-PowerToysRestarted $Runner
     }
 
     Invoke-Check 'The one-line install works with PowerToys closed, and with no PowerToys settings yet' {
-        Get-Process -Name 'PowerToys*' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        Wait-Until { -not (Get-Process -Name 'PowerToys*' -ErrorAction SilentlyContinue) } 'PowerToys to exit' | Out-Null
+        Close-PowerToysProcess
         Remove-Item $GeneralSettings
         $Count = Get-InitializeCount
         $Result = Invoke-WindowsPowerShell $Release $OneLine
@@ -237,8 +218,7 @@ try {
 
     Invoke-Check "The README's step-by-step install downloads, extracts and installs the plugin, and turns on PowerToys Run" {
         # Starts from PowerToys running with PowerToys Run off, as a fresh install has it, and no plugin.
-        Get-Process -Name 'PowerToys*' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        Wait-Until { -not (Get-Process -Name 'PowerToys*' -ErrorAction SilentlyContinue) } 'PowerToys to exit' | Out-Null
+        Close-PowerToysProcess
         Remove-Item $PluginDirectory -Recurse -Force
         $Text = [System.IO.File]::ReadAllText($GeneralSettings) -replace '("PowerToys Run"\s*:\s*)true', '${1}false'
         [System.IO.File]::WriteAllText($GeneralSettings, $Text)
@@ -249,11 +229,10 @@ try {
 
         $Result = Invoke-ReadmeStep 'readme-steps' (Get-ReadmeStep $Release)
         if ($Result.ExitCode -ne 0) { throw "It exited with $($Result.ExitCode)." }
-        $Installed = (Get-Content "$PluginDirectory\plugin.json" -Raw | ConvertFrom-Json).Version
+        $Installed = Get-InstalledVersion
         if ($Installed -ne $Version) { throw "Installed $Installed instead of $Version." }
         if ((Get-PowerToysRunEnabled) -ne $true) { throw 'PowerToys Run is still off.' }
-        $NewRunner = Wait-Until { Get-RunnerId } 'PowerToys to start again'
-        if ("$NewRunner" -eq "$Runner") { throw 'PowerToys was not restarted.' }
+        Assert-PowerToysRestarted $Runner
         Assert-PluginLoadedAfter $Count
     }
 }
@@ -265,7 +244,4 @@ finally {
     Copy-Item "$RunData\Logs" (Join-Path $OutputDirectory 'logs') -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-if ($Failures.Count -gt 0) {
-    throw "$($Failures.Count) quick install check(s) failed: $($Failures -join '; ')"
-}
-Write-Host 'ALL QUICK INSTALL CHECKS PASSED'
+Complete-CheckRun 'quick install'

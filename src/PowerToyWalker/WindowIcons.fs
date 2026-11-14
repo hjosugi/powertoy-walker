@@ -105,9 +105,7 @@ module internal NativeIcons =
 
     /// The icon of a window that still exists and still belongs to the same process.
     let read (key: IconKey) =
-        let window = nativeint key.Window
-
-        if Win32.IsWindow window && NativeWindows.processIdOf window = key.Pid then
+        if NativeWindows.isWindowOf key.Pid (nativeint key.Window) then
             acquire key |> toImage
         else
             None
@@ -115,6 +113,10 @@ module internal NativeIcons =
 /// The live drawings PowerToys Run renders. Each one's image can be swapped
 /// in place, so a finished icon appears without re-adding the search results.
 module private IconDrawing =
+    /// How many drawings to keep track of, far more than PowerToys Run shows at once.
+    [<Literal>]
+    let Limit = 256
+
     let create (source: ImageSource) =
         let group = DrawingGroup()
         group.Children.Add(ImageDrawing(source, Rect(0.0, 0.0, 64.0, 64.0)))
@@ -160,15 +162,16 @@ type internal WindowIcons() =
         | true, reference -> IconDrawing.tryTarget reference
         | _ -> None
 
+    // Forgets the drawings that are no longer shown, or failing that, any one drawing.
     let makeRoomForDrawing () =
-        if drawings.Count = 256 then
+        if drawings.Count >= IconDrawing.Limit then
             drawings
             |> Seq.filter (fun pair -> (IconDrawing.tryTarget pair.Value).IsNone)
             |> Seq.map _.Key
             |> Seq.toArray
             |> Array.iter (drawings.Remove >> ignore)
 
-            if drawings.Count = 256 then
+            if drawings.Count >= IconDrawing.Limit then
                 drawings.Remove(Seq.head drawings.Keys) |> ignore
 
     let rec applyChanges () =

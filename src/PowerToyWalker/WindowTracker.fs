@@ -17,12 +17,9 @@ type internal WindowTracker() =
 
     let isDisposed () = Volatile.Read(&disposed) <> 0
 
+    // PowerToys Run's own launcher is never a window to come back to.
     let recordForeground (window: nativeint) =
-        if
-            window <> 0n
-            && Win32.IsWindow window
-            && NativeWindows.processIdOf window <> Environment.ProcessId
-        then
+        if NativeWindows.isOtherProcess window then
             state.Update(WindowTracking.activated (int64 window))
 
     let callback =

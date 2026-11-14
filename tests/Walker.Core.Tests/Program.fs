@@ -59,9 +59,17 @@ let private windows =
 
 let private defaults = SearchOptions.defaults
 
-let private handlesWith options previous scope text =
-    WindowSearch.search options scope previous text windows
+/// A file of this repository, from the test's build output folder.
+let private repositoryFile (path: string) =
+    Path.Combine(AppContext.BaseDirectory, "../../../../..", path)
+
+/// The handles of the windows a search finds, best first.
+let private found options previous scope text candidates =
+    WindowSearch.search options scope previous text candidates
     |> List.map _.Window.Handle
+
+let private handlesWith options previous scope text =
+    found options previous scope text windows
 
 let private handles = handlesWith defaults None
 
@@ -144,9 +152,7 @@ let private searchTests check =
         ]
 
     let onDesktop text =
-        WindowSearch.search defaults KeywordQuery None text desktop
-        |> List.map _.Window.Handle
-        |> List.sort
+        found defaults None KeywordQuery text desktop |> List.sort
 
     // Letters in order across a whole title made "note" and "spot" match every window here.
     check "abbreviations do not match letters scattered across a title" (onDesktop "note" = [ 14L ])
@@ -155,28 +161,23 @@ let private searchTests check =
     check "initials include capitals within a word" (onDesktop "wt" = [ 12L ])
     check "initials can match inside a title" (onDesktop "pw" = [ 11L; 12L; 13L ])
 
+    let mail =
+        [
+            { firefox with
+                Handle = 21L
+                Title = "Inbox - Gmail"
+                LastActivated = 100L
+            }
+            { firefox with
+                Handle = 22L
+                Title = "Inbox - Mail"
+                LastActivated = 1L
+            }
+        ]
+
     check
         "a match at a word start ranks above one inside a word"
-        ((WindowSearch.search
-            defaults
-            KeywordQuery
-            None
-            "mail"
-            [
-                { firefox with
-                    Handle = 21L
-                    Title = "Inbox - Gmail"
-                    LastActivated = 100L
-                }
-                { firefox with
-                    Handle = 22L
-                    Title = "Inbox - Mail"
-                    LastActivated = 1L
-                }
-            ]
-          |> List.map _.Window.Handle)
-            =
-            [ 22L; 21L ])
+        (found defaults None KeywordQuery "mail" mail = [ 22L; 21L ])
 
     check
         "minimized windows can be excluded"
@@ -333,7 +334,7 @@ let private languageTests check =
 
     // The end-to-end test reads what to expect on screen from this file.
     use expected =
-        Path.Combine(AppContext.BaseDirectory, "../../../../../tests/e2e/expected-text.json")
+        repositoryFile "tests/e2e/expected-text.json"
         |> File.ReadAllText
         |> JsonDocument.Parse
 
@@ -391,10 +392,9 @@ let private settingsTests check =
                 |> List.forall (fun other -> other.Get options = SearchSettings.defaultValue other)))
 
 let private manifestTests check =
-    let path =
-        Path.Combine(AppContext.BaseDirectory, "../../../../../src/PowerToyWalker/plugin.json")
+    use manifest =
+        JsonDocument.Parse(File.ReadAllText(repositoryFile "src/PowerToyWalker/plugin.json"))
 
-    use manifest = JsonDocument.Parse(File.ReadAllText path)
     let root = manifest.RootElement
 
     check

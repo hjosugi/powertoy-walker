@@ -127,6 +127,8 @@ type AsyncCache<'Key, 'Value when 'Key: comparison>
     let workers = defaultArg workers 2
     let lifetime = defaultArg lifetime (TimeSpan.FromMinutes 1.0)
     let clock = defaultArg clock TimeProvider.System
+    // A failed load keeps the fallback for this long before a read asks again.
+    let retryDelay = TimeSpan.FromSeconds 5.0
 
     do
         ArgumentOutOfRangeException.ThrowIfLessThan(capacity, 1)
@@ -149,7 +151,7 @@ type AsyncCache<'Key, 'Value when 'Key: comparison>
             | Ok value ->
                 if state.Modify(CacheState.loaded key value (clock.GetUtcNow() + lifetime)) then
                     updated.Trigger((key, value))
-            | Error _ -> state.Update(CacheState.failed key (clock.GetUtcNow() + TimeSpan.FromSeconds 5.0))
+            | Error _ -> state.Update(CacheState.failed key (clock.GetUtcNow() + retryDelay))
 
     let worker () =
         task {

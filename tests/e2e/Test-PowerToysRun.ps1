@@ -9,16 +9,15 @@ param(
     [string]$LauncherPath = "$env:LOCALAPPDATA\PowerToys\PowerToys.PowerLauncher.exe"
 )
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot/Common.ps1"
 $InvokeEvent = 'Local\PowerToysRunInvokeEvent-30f26ad7-d36d-4c0e-ab02-68bb5ff3c4ab'
 $ExitEvent = 'Local\PowerToysRunExitEvent-3e38e49d-a762-4ef1-88f2-fd4bc7481516'
 $PluginTag = '(powertoy-walker)'
-$RunData = "$env:LOCALAPPDATA\Microsoft\PowerToys\PowerToys Run"
 # The text the plugin shows. It lives in a UTF-8 JSON file, so this script stays ASCII.
 $Text = (Get-Content "$PSScriptRoot/expected-text.json" -Raw -Encoding utf8 | ConvertFrom-Json).$Language
 $CloseItem = "$($Text.closeWindow) $PluginTag"
-$Failures = [System.Collections.Generic.List[string]]::new()
 
-Add-Type -AssemblyName System.Windows.Forms, System.Drawing, UIAutomationClient, UIAutomationTypes
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 Add-Type -Namespace E2E -Name Win32 -MemberDefinition @'
 [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
 [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
@@ -28,45 +27,6 @@ Add-Type -Namespace E2E -Name Win32 -MemberDefinition @'
 '@
 
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
-
-function Save-Screenshot([string]$Name) {
-    try {
-        $Bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
-        $Bitmap = [System.Drawing.Bitmap]::new($Bounds.Width, $Bounds.Height)
-        $Graphics = [System.Drawing.Graphics]::FromImage($Bitmap)
-        $Graphics.CopyFromScreen($Bounds.Location, [System.Drawing.Point]::Empty, $Bounds.Size)
-        $Bitmap.Save((Join-Path $OutputDirectory "$Name.png"))
-        $Graphics.Dispose()
-        $Bitmap.Dispose()
-    }
-    catch {
-        Write-Warning "Screenshot $Name failed: $_"
-    }
-}
-
-function Wait-Until([scriptblock]$Condition, [string]$What, [int]$Seconds = 20) {
-    $Deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
-    do {
-        $Value = & $Condition
-        if ($Value) { return $Value }
-        Start-Sleep -Milliseconds 200
-    } while ([DateTime]::UtcNow -lt $Deadline)
-    throw "Timed out waiting for $What."
-}
-
-# Runs one check; a failure is recorded, and the remaining checks still run.
-function Invoke-Check([string]$Name, [scriptblock]$Body) {
-    $Slug = $Name -replace '[^A-Za-z0-9]+', '-'
-    try {
-        & $Body
-        Write-Host "PASS  $Name"
-    }
-    catch {
-        $Failures.Add($Name)
-        Write-Host "FAIL  $Name`n      $_"
-    }
-    Save-Screenshot $Slug
-}
 
 # Builds a console-free GUI program. A console would open in Windows Terminal, whose
 # window belongs to another process and could not stand in for an app's own window.
@@ -192,8 +152,7 @@ Invoke-Check 'The ZIP holds exactly the expected files' {
 }
 
 # The setup may have started PowerToys, and Install.ps1 rightly refuses while it runs.
-Get-Process -Name 'PowerToys*' -ErrorAction SilentlyContinue | Stop-Process -Force
-Wait-Until { -not (Get-Process -Name 'PowerToys*' -ErrorAction SilentlyContinue) } 'PowerToys to exit' | Out-Null
+Close-PowerToysProcess
 
 Invoke-Check 'Install.ps1 installs the package' {
     # The command from the README, which has to work under Windows PowerShell's default policy.
@@ -221,11 +180,6 @@ if ($Language -eq 'en-US') { Remove-Item $LanguageFile -ErrorAction SilentlyCont
 else { Set-Content $LanguageFile (@{ language = $Language } | ConvertTo-Json -Compress) }
 
 $Launcher = Start-Process $LauncherPath -PassThru
-
-function Get-LogText {
-    (Get-ChildItem "$RunData\Logs" -Recurse -Filter '*.txt' -ErrorAction SilentlyContinue |
-        ForEach-Object { Get-Content $_.FullName -Raw -ErrorAction SilentlyContinue }) -join "`n"
-}
 
 try {
     Invoke-Check 'PowerToys Run loads and initializes the plugin' {
@@ -395,7 +349,4 @@ finally {
         Copy-Item -Destination $OutputDirectory -Force -ErrorAction SilentlyContinue
 }
 
-if ($Failures.Count -gt 0) {
-    throw "$($Failures.Count) end-to-end check(s) failed: $($Failures -join '; ')"
-}
-Write-Host 'ALL END-TO-END CHECKS PASSED'
+Complete-CheckRun 'end-to-end'
